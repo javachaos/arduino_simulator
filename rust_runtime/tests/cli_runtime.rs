@@ -64,7 +64,16 @@ fn temp_path(name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("avrsim-rs-{name}-{unique}"))
+    std::env::temp_dir().join(format!("arduino-simulator-{name}-{unique}"))
+}
+
+fn runtime_cli_binary() -> PathBuf {
+    let current = std::env::current_exe().expect("current test executable");
+    current
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("target debug directory")
+        .join("arduino-simulator")
 }
 
 #[test]
@@ -182,7 +191,7 @@ fn cli_run_nano_writes_serial_output_to_file() {
     fs::write(&hex_path, hex).unwrap();
 
     let status = rust_runtime::run_cli([
-        "avrsim-rs".to_string(),
+        "arduino-simulator".to_string(),
         "run-nano".to_string(),
         hex_path.display().to_string(),
         "--out".to_string(),
@@ -216,7 +225,7 @@ fn cli_run_mega_prints_serial_output_to_stdout() {
     let hex = make_hex(&program);
     fs::write(&hex_path, hex).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_avrsim-rs"))
+    let output = Command::new(runtime_cli_binary())
         .args([
             "run-mega",
             hex_path.to_str().unwrap(),
@@ -238,7 +247,7 @@ fn cli_reports_missing_serial_output_when_requested() {
     let hex_path = temp_path("silent.hex");
     fs::write(&hex_path, make_hex(&[0x0000, 0x0000, brk()])).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_avrsim-rs"))
+    let output = Command::new(runtime_cli_binary())
         .args([
             "run-nano",
             hex_path.to_str().unwrap(),

@@ -98,7 +98,7 @@ impl eframe::App for AvrSimGuiApp {
 
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.vertical(|ui| {
-                ui.heading("avrsim-rs");
+                ui.heading("arduino_simulator");
                 ui.label("Load a PCB, auto-wire the selected Arduino CPU to its nets, overlay attached modules, and watch the simulation live on the board drawing.");
                 ui.add_space(4.0);
 
@@ -847,7 +847,7 @@ impl AvrSimGuiApp {
                     board_signal: signal.clone(),
                     pcb_net: net_name,
                     mode: infer_binding_mode(&signal),
-                    note: Some("Auto-bound by avrsim-rs".to_string()),
+                    note: Some("Auto-bound by arduino_simulator".to_string()),
                 },
             );
             bound += 1;
@@ -1523,7 +1523,7 @@ fn auto_wire_module_overlay(module: &mut ModuleOverlay, loaded_pcb: Option<&Load
             module_signal: signal,
             pcb_net,
             mode,
-            note: Some("Auto-wired by avrsim-rs".to_string()),
+            note: Some("Auto-wired by arduino_simulator".to_string()),
         });
         wired += 1;
     }

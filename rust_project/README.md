@@ -1,6 +1,6 @@
 # rust_project
 
-`rust_project` defines the saved document formats for `avrsim`.
+`rust_project` defines the saved document formats for `arduino_simulator`.
 
 Current document kinds:
 

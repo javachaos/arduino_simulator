@@ -1,10 +1,10 @@
 # rust_cpu
 
-`rust_cpu` is the native side-by-side AVR core rewrite for `avrsim`.
+`rust_cpu` is the native side-by-side AVR core rewrite for `arduino_simulator`.
 
 Design goals:
 
-- keep the Python simulator as the reference implementation
+- keep CPU behavior locked down with deterministic parity-style tests
 - move the hot CPU loop to native code without dragging GUI/CLI code with it
 - keep the MMIO boundary explicit through a `DataBus` trait
 - prefer typed operands and explicit CPU state over dynamic dictionaries
@@ -19,4 +19,3 @@ This crate is intentionally focused on the important core pieces first:
 
 Because the local machine does not currently have a Rust toolchain installed, this
 crate is checked in as source only and has not yet been compiled in this session.
-

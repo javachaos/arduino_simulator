@@ -1,6 +1,6 @@
 # rust_board
 
-`rust_board` is the native board-description layer for `avrsim`.
+`rust_board` is the native board-description layer for `arduino_simulator`.
 
 Current scope:
 
@@ -24,5 +24,5 @@ Run its tests from the workspace root:
 cargo test -p rust_board
 ```
 
-The goal is to replace the Python board/DSL layer incrementally while keeping
-the data model deterministic and easy to regression-test.
+The goal is to keep the board/DSL layer deterministic, portable, and easy to
+regression-test across the Rust workspace.

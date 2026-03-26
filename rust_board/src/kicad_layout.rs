@@ -677,11 +677,7 @@ mod tests {
     use super::layout_from_kicad_pcb;
 
     fn examples_root() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("workspace root")
-            .join("examples/pcbs")
-            .to_path_buf()
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/pcbs")
     }
 
     fn example_pcb_path(file_name: &str) -> PathBuf {

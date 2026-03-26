@@ -1,6 +1,6 @@
 # rust_behavior
 
-`rust_behavior` provides the declarative runtime-behavior layer for `avrsim`.
+`rust_behavior` provides the declarative runtime-behavior layer for `arduino_simulator`.
 
 Current scope:
 

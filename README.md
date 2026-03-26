@@ -1,6 +1,6 @@
-# avrsim
+# arduino_simulator
 
-`avrsim` is a standalone AVR simulation and board-tooling workspace.
+`arduino_simulator` is a standalone AVR simulation and board-tooling workspace.
 
 ## License
 
@@ -26,61 +26,8 @@ The workspace is now split cleanly by responsibility:
 - `rust_gui/`
   Native desktop GUI for compile/load/run plus CPU and serial inspection
 
-The remaining Python package is now focused on board-oriented tooling:
-
-- `dsl.py`
-- `board_models.py`
-- `lang.py`
-- `kicad_pcb.py`
-- `kicad_layout.py`
-- `behavior.py`
-
-The legacy Python execution/runtime stack has been archived at:
-
-- `archive/python_runtime_legacy_20260324.zip`
-
-## Python Board Tooling
-
-Generate the native DSL from a KiCad board:
-
-```sh
-python3 -m avrsim from-pcb \
-  examples/pcbs/air_node.kicad_pcb
-```
-
-Generate JSON instead:
-
-```sh
-python3 -m avrsim from-pcb \
-  examples/pcbs/air_node.kicad_pcb \
-  --format json
-```
-
-Generate a built-in logical board model:
-
-```sh
-python3 -m avrsim from-builtin arduino_nano_v3
-```
-
-List built-in models:
-
-```sh
-python3 -m avrsim list-board-models
-```
-
-Verify a live board against its behavior profile:
-
-```sh
-python3 -m avrsim verify-board \
-  examples/pcbs/air_node.kicad_pcb
-```
-
-Dump parsed KiCad layout geometry:
-
-```sh
-python3 -m avrsim layout-json \
-  examples/pcbs/air_node.kicad_pcb
-```
+The checked-in workspace is Rust-only. Board parsing, built-in models, layout
+geometry, and document formats now live in the Rust crates.
 
 ## Native Runtime
 
@@ -114,10 +61,10 @@ The GUI can:
 
 - compile an Arduino `.ino` sketch with `arduino-cli`
 - load a `.hex` image directly
-- open and save `.avrsim.json` simulation projects
+- open and save simulation project JSON documents
 - open a dedicated board editor for authoring multi-PCB board-stack files
 - keep the selected host board, firmware source, and PCB path together
-- load `.avrsim.json` board files and render their primary PCB-backed member directly
+- load board-definition JSON documents and render their primary PCB-backed member directly
 - edit and persist host signal to PCB net bindings
 - load multiple PCB-backed board/module members into one assembly bundle
 - associate optional `Mega` / `Nano` host boards plus `.ino` / `.hex` firmware per member
@@ -126,6 +73,9 @@ The GUI can:
 - open a bidirectional serial console window with host baud selection
 - run, pause, step, reset, and clear serial output
 - show CPU state, registers, next instruction, compile log, and scrollable serial output
+
+The GUI and project crates use `rust_board` for KiCad import, built-in board
+models, and layout rendering.
 
 ## Rust Workspace
 

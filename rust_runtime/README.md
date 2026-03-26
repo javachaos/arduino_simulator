@@ -1,14 +1,14 @@
 # rust_runtime
 
 `rust_runtime` is the standalone native runtime and CLI layer for the Rust side
-of `avrsim`.
+of `arduino_simulator`.
 
 It sits on top of:
 
 - `rust_cpu/` for AVR fetch/decode/execute
 - `rust_mcu/` for ATmega328P / ATmega2560 MMIO behavior
 
-The current native CLI binary is `avrsim-rs`.
+Run the crate from the workspace root with `cargo run -p rust_runtime -- ...`.
 
 Examples:
 

@@ -396,10 +396,10 @@ impl OutputSink {
 fn usage() -> String {
     [
         "Usage:",
-        "  avrsim-rs run-nano <firmware.hex> [--max-instructions N] [--until-serial] [--chunk-size N] [--out PATH]",
-        "  avrsim-rs run-mega <firmware.hex> [--max-instructions N] [--until-serial] [--chunk-size N] [--out PATH]",
-        "  avrsim-rs monitor-nano <firmware.hex> [--max-instructions N] [--chunk-size N] [--refresh-ms N]",
-        "  avrsim-rs monitor-mega <firmware.hex> [--max-instructions N] [--chunk-size N] [--refresh-ms N]",
+        "  arduino-simulator run-nano <firmware.hex> [--max-instructions N] [--until-serial] [--chunk-size N] [--out PATH]",
+        "  arduino-simulator run-mega <firmware.hex> [--max-instructions N] [--until-serial] [--chunk-size N] [--out PATH]",
+        "  arduino-simulator monitor-nano <firmware.hex> [--max-instructions N] [--chunk-size N] [--refresh-ms N]",
+        "  arduino-simulator monitor-mega <firmware.hex> [--max-instructions N] [--chunk-size N] [--refresh-ms N]",
         "",
         "By default the simulator keeps running until the firmware breaks, sleeps, or you interrupt it.",
         "Monitor controls: Space pause/resume, S step, C clear serial, Q quit.",

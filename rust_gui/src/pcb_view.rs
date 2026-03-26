@@ -616,11 +616,7 @@ mod tests {
     use super::{distance_to_segment, net_tooltip_summary, point_in_polygon, LoadedPcb};
 
     fn examples_root() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("workspace root")
-            .join("examples/pcbs")
-            .to_path_buf()
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/pcbs")
     }
 
     fn example_pcb_path(file_name: &str) -> PathBuf {

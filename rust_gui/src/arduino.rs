@@ -163,7 +163,7 @@ fn unique_build_path(sketch_name: &str, board: HostBoard) -> PathBuf {
         .map(|value| value.as_millis())
         .unwrap_or(0);
     std::env::temp_dir().join(format!(
-        "avrsim-rs-{}-{}-{}",
+        "arduino-simulator-{}-{}-{}",
         sanitize_name(sketch_name),
         board.short_name(),
         stamp
