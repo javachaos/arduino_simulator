@@ -1,0 +1,18 @@
+{
+  "kind": "behavior_definition",
+  "format_version": "0.3.0",
+  "name": "bh1750_breakout_behavior",
+  "description": "Behavior definition for a common BH1750 ambient light I2C breakout.",
+  "engine": "ambient_light_i2c_sensor",
+  "ports": [
+    { "board_port": "SDA", "role": "sda", "note": null },
+    { "board_port": "SCL", "role": "scl", "note": null },
+    { "board_port": "VCC", "role": "vcc", "note": null },
+    { "board_port": "GND", "role": "gnd", "note": null },
+    { "board_port": "ADDR", "role": "address_select", "note": null }
+  ],
+  "parameters": {
+    "address": 35,
+    "illuminance_lux": 250.0
+  }
+}

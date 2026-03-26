@@ -1842,6 +1842,15 @@ fn collect_name_forms(raw: &str, forms: &mut BTreeSet<String>) {
     if !normalized.is_empty() {
         forms.insert(normalized.clone());
     }
+    if let Some(mapped_signal) = example_header_alias_signal(&normalized) {
+        collect_name_forms(&mapped_signal, forms);
+        if let Some(rest) = mapped_signal.strip_prefix('A').filter(|value| {
+            !value.is_empty() && value.chars().all(|character| character.is_ascii_digit())
+        }) {
+            forms.insert(format!("ADC{rest}"));
+        }
+        return;
+    }
 
     for token in normalized
         .split(|character: char| !character.is_ascii_alphanumeric())
@@ -1890,6 +1899,26 @@ fn collect_name_forms(raw: &str, forms: &mut BTreeSet<String>) {
             }
             _ => {}
         }
+    }
+}
+
+fn example_header_alias_signal(normalized: &str) -> Option<String> {
+    let (reference, pad_text) = normalized.rsplit_once('_')?;
+    let pad = pad_text.parse::<u8>().ok()?;
+    match reference {
+        "P_AUX" if (1..=8).contains(&pad) => Some(format!("A{}", pad + 7)),
+        "P_DIG" => match pad {
+            1 | 2 => Some("GND".to_string()),
+            3..=34 => {
+                let pair_index = (pad - 3) / 2;
+                let base = 52u8.saturating_sub(pair_index * 2);
+                let signal = if pad % 2 == 1 { base } else { base + 1 };
+                Some(format!("D{signal}"))
+            }
+            35 | 36 => Some("+5V".to_string()),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -2085,6 +2114,13 @@ mod tests {
         let ports = editor.derive_member_ports(PRIMARY_MEMBER_ID, &snapshot);
         let names = ports.into_iter().map(|port| port.name).collect::<Vec<_>>();
         assert_eq!(names, vec!["GND", "SCL", "SDA", "VCC"]);
+
+        editor.bundle.primary.source =
+            rust_project::DefinitionSource::builtin_board_model("bme280_breakout");
+        let snapshot = editor.bundle.primary.clone();
+        let ports = editor.derive_member_ports(PRIMARY_MEMBER_ID, &snapshot);
+        let names = ports.into_iter().map(|port| port.name).collect::<Vec<_>>();
+        assert_eq!(names, vec!["ADDR", "GND", "SCL", "SDA", "VCC"]);
     }
 
     #[test]
@@ -2098,6 +2134,15 @@ mod tests {
         assert_eq!(
             suggestion.builtin_name.as_deref(),
             Some("mcp2515_tja1050_can_module_behavior")
+        );
+
+        editor.bundle.primary.source =
+            rust_project::DefinitionSource::builtin_board_model("bme280_breakout");
+        let suggestion =
+            suggested_behavior_reference_for_member(&editor.bundle.primary).expect("suggestion");
+        assert_eq!(
+            suggestion.builtin_name.as_deref(),
+            Some("bme280_breakout_behavior")
         );
     }
 
@@ -2205,6 +2250,32 @@ mod tests {
     }
 
     #[test]
+    fn port_match_forms_expand_sidecar_header_aliases_to_mega_pins() {
+        let mut digital = rust_project::PortDefinition::new(
+            "DIGITAL_BUS",
+            rust_project::PortClass::Digital,
+            rust_project::PortDirection::Bidirectional,
+        );
+        digital.aliases.push("P_DIG:33".to_string());
+        let digital_forms = port_match_forms(&digital);
+        assert!(digital_forms.contains("P_DIG_33"));
+        assert!(digital_forms.contains("D22"));
+        assert!(!digital_forms.contains("D33"));
+
+        let mut analog = rust_project::PortDefinition::new(
+            "ANALOG_BUS",
+            rust_project::PortClass::Analog,
+            rust_project::PortDirection::Bidirectional,
+        );
+        analog.aliases.push("P_AUX:1".to_string());
+        let analog_forms = port_match_forms(&analog);
+        assert!(analog_forms.contains("P_AUX_1"));
+        assert!(analog_forms.contains("A8"));
+        assert!(analog_forms.contains("ADC8"));
+        assert!(!analog_forms.contains("D1"));
+    }
+
+    #[test]
     fn best_primary_port_match_prefers_unique_controller_function_match() {
         let primary_ports = vec![
             rust_project::PortDefinition::new(
@@ -2230,6 +2301,58 @@ mod tests {
         );
         let matched = best_primary_port_match(&primary_ports, &child).expect("match");
         assert_eq!(matched.name, "D11_MOSI");
+    }
+
+    #[test]
+    fn import_wiring_maps_sidecar_example_headers_to_mega_ports() {
+        let mut editor = BoardEditorState::default();
+        editor.add_child_member(AssemblyMemberKind::Board);
+        let child_id = editor.bundle.children[0].id.clone();
+        let child = editor.find_member_mut(&child_id).expect("child");
+        let mut digital = rust_project::PortDefinition::new(
+            "/22",
+            rust_project::PortClass::Digital,
+            rust_project::PortDirection::Bidirectional,
+        );
+        digital.aliases.push("P_DIG:33".to_string());
+        let mut analog = rust_project::PortDefinition::new(
+            "/A8",
+            rust_project::PortClass::Analog,
+            rust_project::PortDirection::Bidirectional,
+        );
+        analog.aliases.push("P_AUX:1".to_string());
+        let mut ground = rust_project::PortDefinition::new(
+            "GND",
+            rust_project::PortClass::Power,
+            rust_project::PortDirection::Passive,
+        );
+        ground.aliases.push("P_DIG:1".to_string());
+        let mut supply = rust_project::PortDefinition::new(
+            "MEGA_5V",
+            rust_project::PortClass::Power,
+            rust_project::PortDirection::Passive,
+        );
+        supply.aliases.push("P_DIG:35".to_string());
+        child.ports = vec![digital, analog, ground, supply];
+
+        let imported = editor.import_wiring_from_ports();
+        assert_eq!(imported, 4);
+        assert!(editor.attachment_exists(
+            &rust_project::AttachmentEndpoint::primary("D22"),
+            &rust_project::AttachmentEndpoint::child(&child_id, "/22"),
+        ));
+        assert!(editor.attachment_exists(
+            &rust_project::AttachmentEndpoint::primary("A8"),
+            &rust_project::AttachmentEndpoint::child(&child_id, "/A8"),
+        ));
+        assert!(editor.attachment_exists(
+            &rust_project::AttachmentEndpoint::primary("GND"),
+            &rust_project::AttachmentEndpoint::child(&child_id, "GND"),
+        ));
+        assert!(editor.attachment_exists(
+            &rust_project::AttachmentEndpoint::primary("+5V"),
+            &rust_project::AttachmentEndpoint::child(&child_id, "MEGA_5V"),
+        ));
     }
 
     #[test]

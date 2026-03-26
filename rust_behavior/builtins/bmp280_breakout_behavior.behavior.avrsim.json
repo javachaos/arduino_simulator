@@ -1,0 +1,22 @@
+{
+  "kind": "behavior_definition",
+  "format_version": "0.3.0",
+  "name": "bmp280_breakout_behavior",
+  "description": "Behavior definition for a common BMP280 temperature and pressure I2C breakout.",
+  "engine": "environmental_i2c_sensor",
+  "ports": [
+    { "board_port": "SDA", "role": "sda", "note": null },
+    { "board_port": "SCL", "role": "scl", "note": null },
+    { "board_port": "VCC", "role": "vcc", "note": null },
+    { "board_port": "GND", "role": "gnd", "note": null },
+    { "board_port": "ADDR", "role": "address_select", "note": null }
+  ],
+  "parameters": {
+    "address": 118,
+    "measurement_delay_ms": 20,
+    "temperature_c": 21.5,
+    "pressure_hpa": 1013.25,
+    "relative_humidity_percent": 0.0,
+    "supports_humidity": false
+  }
+}

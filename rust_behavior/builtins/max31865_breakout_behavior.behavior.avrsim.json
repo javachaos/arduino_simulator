@@ -1,0 +1,64 @@
+{
+  "kind": "behavior_definition",
+  "format_version": "0.3.0",
+  "name": "max31865_breakout_behavior",
+  "description": "Behavior definition for the MAX31865 breakout driving a PT1000 probe.",
+  "engine": "max31865_rtd_frontend",
+  "ports": [
+    {
+      "board_port": "CLK",
+      "role": "spi_sck",
+      "note": null
+    },
+    {
+      "board_port": "SDO",
+      "role": "spi_miso",
+      "note": null
+    },
+    {
+      "board_port": "SDI",
+      "role": "spi_mosi",
+      "note": null
+    },
+    {
+      "board_port": "CS",
+      "role": "spi_cs",
+      "note": null
+    },
+    {
+      "board_port": "VCC",
+      "role": "vcc",
+      "note": null
+    },
+    {
+      "board_port": "GND",
+      "role": "gnd",
+      "note": null
+    },
+    {
+      "board_port": "F+",
+      "role": "force_plus",
+      "note": null
+    },
+    {
+      "board_port": "F-",
+      "role": "force_minus",
+      "note": null
+    },
+    {
+      "board_port": "RTD+",
+      "role": "sense_plus",
+      "note": null
+    },
+    {
+      "board_port": "RTD-",
+      "role": "sense_minus",
+      "note": null
+    }
+  ],
+  "parameters": {
+    "nominal_rtd_ohms": 1000.0,
+    "reference_resistor_ohms": 4300.0,
+    "temperature_c": 20.0
+  }
+}

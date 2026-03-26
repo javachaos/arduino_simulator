@@ -1,0 +1,100 @@
+{
+  "name": "arduino_nano_v3",
+  "title": "Arduino Nano V3 (Logical Model)",
+  "components": [
+    {
+      "template": "mcu",
+      "reference": "U1",
+      "value": "ATmega328P",
+      "footprint": "Virtual:ATmega328P_BoardAbstraction",
+      "signals": [
+        "D13_SCK",
+        "+3V3",
+        "AREF",
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4_SDA",
+        "A5_SCL",
+        "A6",
+        "A7",
+        "+5V",
+        "RESET",
+        "GND",
+        "VIN",
+        "D12_MISO",
+        "D11_MOSI",
+        "D10_SS",
+        "D9_PWM",
+        "D8",
+        "D7",
+        "D6_PWM",
+        "D5_PWM",
+        "D4",
+        "D3_PWM",
+        "D2",
+        "D0_RX",
+        "D1_TX"
+      ],
+      "position": {
+        "x_mm": 25.0,
+        "y_mm": 20.0
+      }
+    },
+    {
+      "template": "header",
+      "reference": "J_LEFT",
+      "value": "LEFT HEADER",
+      "footprint": "Virtual:Header_1x15_2.54mm",
+      "signals": [
+        "D13_SCK",
+        "+3V3",
+        "AREF",
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4_SDA",
+        "A5_SCL",
+        "A6",
+        "A7",
+        "+5V",
+        "RESET",
+        "GND",
+        "VIN"
+      ],
+      "position": {
+        "x_mm": 5.0,
+        "y_mm": 5.0
+      }
+    },
+    {
+      "template": "header",
+      "reference": "J_RIGHT",
+      "value": "RIGHT HEADER",
+      "footprint": "Virtual:Header_1x15_2.54mm",
+      "signals": [
+        "D12_MISO",
+        "D11_MOSI",
+        "D10_SS",
+        "D9_PWM",
+        "D8",
+        "D7",
+        "D6_PWM",
+        "D5_PWM",
+        "D4",
+        "D3_PWM",
+        "D2",
+        "GND",
+        "RESET",
+        "D0_RX",
+        "D1_TX"
+      ],
+      "position": {
+        "x_mm": 45.0,
+        "y_mm": 5.0
+      }
+    }
+  ]
+}

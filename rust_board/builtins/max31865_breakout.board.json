@@ -1,0 +1,62 @@
+{
+  "name": "max31865_breakout",
+  "title": "MAX31865 RTD Breakout (Logical Model)",
+  "components": [
+    {
+      "template": "module",
+      "reference": "U1",
+      "value": "MAX31865",
+      "footprint": "Virtual:MAX31865_Breakout",
+      "signals": [
+        "CLK",
+        "SDO",
+        "SDI",
+        "CS",
+        "VCC",
+        "GND",
+        "F+",
+        "F-",
+        "RTD+",
+        "RTD-"
+      ],
+      "position": {
+        "x_mm": 28.0,
+        "y_mm": 15.0
+      }
+    },
+    {
+      "template": "header",
+      "reference": "J_HOST",
+      "value": "SPI + Power",
+      "footprint": "Virtual:Header_1x06_2.54mm",
+      "signals": [
+        "CLK",
+        "SDO",
+        "SDI",
+        "CS",
+        "VCC",
+        "GND"
+      ],
+      "position": {
+        "x_mm": 5.0,
+        "y_mm": 5.0
+      }
+    },
+    {
+      "template": "header",
+      "reference": "J_RTD",
+      "value": "RTD Probe",
+      "footprint": "Virtual:TerminalBlock_1x04_3.50mm",
+      "signals": [
+        "F+",
+        "F-",
+        "RTD+",
+        "RTD-"
+      ],
+      "position": {
+        "x_mm": 58.0,
+        "y_mm": 5.0
+      }
+    }
+  ]
+}

@@ -75,6 +75,11 @@ pub struct AvrSimGuiApp {
     module_overlays: Vec<ModuleOverlay>,
     project_probes: Vec<ProbeSpec>,
     project_stimuli: Vec<StimulusSpec>,
+    mega_board_preview: Option<LoadedPcb>,
+    nano_board_preview: Option<LoadedPcb>,
+    wiring_open: bool,
+    compile_log_open: bool,
+    controller_pins_open: bool,
     serial_console_open: bool,
     serial_terminal_baud: u32,
     serial_input: String,
@@ -104,6 +109,11 @@ impl Default for AvrSimGuiApp {
             module_overlays: Vec::new(),
             project_probes: Vec::new(),
             project_stimuli: Vec::new(),
+            mega_board_preview: None,
+            nano_board_preview: None,
+            wiring_open: false,
+            compile_log_open: false,
+            controller_pins_open: false,
             serial_console_open: false,
             serial_terminal_baud: 115_200,
             serial_input: String::new(),
@@ -150,6 +160,36 @@ impl eframe::App for AvrSimGuiApp {
                     }
                     if ui.button("Save Project").clicked() {
                         self.save_project_dialog();
+                    }
+                    if ui
+                        .button(if self.wiring_open {
+                            "Hide Wiring"
+                        } else {
+                            "Wiring"
+                        })
+                        .clicked()
+                    {
+                        self.wiring_open = !self.wiring_open;
+                    }
+                    if ui
+                        .button(if self.controller_pins_open {
+                            "Hide Controller Pins"
+                        } else {
+                            "Controller Pins"
+                        })
+                        .clicked()
+                    {
+                        self.controller_pins_open = !self.controller_pins_open;
+                    }
+                    if ui
+                        .button(if self.compile_log_open {
+                            "Hide Compile Log"
+                        } else {
+                            "Compile Log"
+                        })
+                        .clicked()
+                    {
+                        self.compile_log_open = !self.compile_log_open;
                     }
                     if ui.button("Serial Console").clicked() {
                         self.serial_console_open = true;
@@ -290,13 +330,14 @@ impl eframe::App for AvrSimGuiApp {
             .resizable(true)
             .default_width(360.0)
             .show(ctx, |ui| {
+                let displayed_board = displayed_host_board(self.selected_board, &self.snapshot);
                 ui.heading("CPU");
                 ui.add_space(4.0);
                 egui::Grid::new("cpu_summary")
                     .num_columns(2)
                     .spacing([12.0, 4.0])
                     .show(ui, |ui| {
-                        summary_row(ui, "Board", self.snapshot.board.label());
+                        summary_row(ui, "Board", displayed_board.label());
                         summary_row(ui, "PC", &format!("0x{:06X}", self.snapshot.pc));
                         summary_row(ui, "SP", &format!("0x{:04X}", self.snapshot.sp));
                         summary_row(ui, "Cycles", &self.snapshot.cycles.to_string());
@@ -308,6 +349,8 @@ impl eframe::App for AvrSimGuiApp {
                         );
                     });
 
+                ui.add_space(8.0);
+                self.draw_host_board_card(ui, displayed_board);
                 ui.add_space(8.0);
                 ui.label(RichText::new("Next Instruction").strong());
                 code_block(ui, &self.snapshot.next_instruction);
@@ -347,18 +390,7 @@ impl eframe::App for AvrSimGuiApp {
                     });
             });
 
-        egui::SidePanel::right("bindings_panel")
-            .resizable(true)
-            .default_width(360.0)
-            .show(ctx, |ui| {
-                self.draw_wiring_panel(ui);
-            });
-
         egui::CentralPanel::default().show(ctx, |ui| {
-            let available_height = ui.available_height();
-            let board_height = (available_height * 0.46).max(260.0);
-            let compile_height = (available_height * 0.36).max(180.0);
-
             ui.heading("PCB View");
             ui.add_space(4.0);
             egui::Frame::group(ui.style()).show(ui, |ui| {
@@ -375,6 +407,7 @@ impl eframe::App for AvrSimGuiApp {
                         ui.label(format!("Modules: {}", self.module_overlays.len()));
                     });
                     ui.add_space(6.0);
+                    let board_height = ui.available_height().max(1.0);
                     let side_width = 320.0;
                     let gap = 10.0;
                     let render_width = (ui.available_width() - side_width - gap).max(320.0);
@@ -408,24 +441,18 @@ impl eframe::App for AvrSimGuiApp {
                         );
                     });
                 } else {
+                    let board_height = ui.available_height().max(1.0);
                     ui.set_min_height(board_height);
                     ui.centered_and_justified(|ui| {
                         ui.label("Load a .kicad_pcb file to auto-wire the selected Arduino and inspect live PCB activity.");
                     });
                 }
             });
-
-            ui.add_space(8.0);
-            ui.heading("Compile Log");
-            ui.add_space(4.0);
-            let compile_log = if self.snapshot.compile_log.is_empty() {
-                "<no compile log yet>".to_string()
-            } else {
-                self.snapshot.compile_log.clone()
-            };
-            scrolled_text_block(ui, "compile_log", compile_log, compile_height, false);
         });
 
+        self.show_wiring_window(ctx);
+        self.show_compile_log_window(ctx);
+        self.show_controller_pins_window(ctx);
         self.show_serial_console(ctx);
     }
 }
@@ -438,6 +465,92 @@ impl AvrSimGuiApp {
             self.update_host_signal_activity(&latest.snapshot);
             self.snapshot = latest.snapshot;
         }
+    }
+
+    fn draw_host_board_card(&mut self, ui: &mut egui::Ui, board: HostBoard) {
+        let context_note = if self.snapshot.firmware_path.is_some() {
+            "Loaded runtime board"
+        } else {
+            "Selected target board"
+        };
+        let bindings = self.host_board_preview_bindings(board);
+        let active_nets = self.active_host_preview_nets(board);
+        let module_nets = BTreeSet::new();
+        let preview = self.board_preview(board);
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.label(RichText::new("Current Board").strong());
+            ui.small(format!("{context_note}: {}", board.label()));
+            ui.add_space(6.0);
+            if let Some(preview) = preview {
+                let height = 190.0;
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), height),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        render_pcb(ui, &preview, &bindings, &[], &module_nets, &active_nets);
+                    },
+                );
+                if !bindings.is_empty() {
+                    ui.small(format!(
+                        "Wired controller pins highlighted: {}",
+                        bindings.len()
+                    ));
+                }
+                if !active_nets.is_empty() {
+                    ui.small(format!("Active host nets: {}", active_nets.len()));
+                }
+                if bindings.is_empty() && active_nets.is_empty() {
+                    ui.small("Host nets will highlight here as wiring and activity appear.");
+                }
+            } else {
+                ui.small("Board preview canvas is unavailable.");
+            }
+        });
+    }
+
+    fn board_preview(&mut self, board: HostBoard) -> Option<&LoadedPcb> {
+        let slot = match board {
+            HostBoard::Mega2560Rev3 => &mut self.mega_board_preview,
+            HostBoard::NanoV3 => &mut self.nano_board_preview,
+        };
+        if slot.is_none() {
+            *slot = load_host_board_preview(board);
+        }
+        slot.as_ref()
+    }
+
+    fn host_board_preview_bindings(&self, board: HostBoard) -> Vec<SignalBinding> {
+        let valid = host_signals_for_board(board)
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let mut bindings = self
+            .bindings
+            .values()
+            .filter(|binding| valid.contains(&binding.board_signal))
+            .map(|binding| SignalBinding {
+                board_signal: binding.board_signal.clone(),
+                pcb_net: binding.board_signal.clone(),
+                mode: binding.mode,
+                note: binding.note.clone(),
+            })
+            .collect::<Vec<_>>();
+        bindings.sort_by(|left, right| left.board_signal.cmp(&right.board_signal));
+        bindings
+    }
+
+    fn active_host_preview_nets(&self, board: HostBoard) -> BTreeSet<String> {
+        let now = Instant::now();
+        host_signals_for_board(board)
+            .into_iter()
+            .filter(|signal| {
+                self.host_signal_levels.get(signal).copied().unwrap_or(0) != 0
+                    || self
+                        .host_signal_flash_until
+                        .get(signal)
+                        .map(|deadline| *deadline > now)
+                        .unwrap_or(false)
+            })
+            .collect()
     }
 
     fn update_host_signal_activity(&mut self, snapshot: &SimulationSnapshot) {
@@ -622,9 +735,6 @@ impl AvrSimGuiApp {
             });
 
         ui.add_space(8.0);
-        self.draw_controller_pin_block(ui);
-
-        ui.add_space(8.0);
         egui::CollapsingHeader::new("Advanced Controller Wiring")
             .default_open(self.loaded_pcb.is_some() && self.bindings.is_empty())
             .show(ui, |ui| {
@@ -632,10 +742,27 @@ impl AvrSimGuiApp {
             });
     }
 
+    fn show_wiring_window(&mut self, ctx: &egui::Context) {
+        if !self.wiring_open {
+            return;
+        }
+        let title = format!(
+            "Wiring ({} controller, {} modules)",
+            self.bindings.len(),
+            self.module_overlays.len()
+        );
+        let mut open = self.wiring_open;
+        egui::Window::new(title)
+            .open(&mut open)
+            .default_size(egui::vec2(380.0, 620.0))
+            .show(ctx, |ui| {
+                self.draw_wiring_panel(ui);
+            });
+        self.wiring_open = open;
+    }
+
     fn host_signals(&self) -> Vec<String> {
-        load_built_in_board_model(self.selected_board.builtin_board_model())
-            .map(|board| board.nets.into_iter().map(|net| net.name).collect())
-            .unwrap_or_default()
+        host_signals_for_board(self.selected_board)
     }
 
     fn draw_advanced_controller_binding_matrix(&mut self, ui: &mut egui::Ui) {
@@ -752,59 +879,82 @@ impl AvrSimGuiApp {
             });
     }
 
-    fn draw_controller_pin_block(&self, ui: &mut egui::Ui) {
+    fn show_controller_pins_window(&mut self, ctx: &egui::Context) {
+        if !self.controller_pins_open {
+            return;
+        }
+        let title = {
+            let count = self.controller_connections().len();
+            if count == 0 {
+                "Controller Pins".to_string()
+            } else {
+                format!("Controller Pins ({count})")
+            }
+        };
+        let mut open = self.controller_pins_open;
+        egui::Window::new(title)
+            .open(&mut open)
+            .default_size(egui::vec2(360.0, 440.0))
+            .show(ctx, |ui| {
+                self.draw_controller_pin_contents(ui);
+            });
+        self.controller_pins_open = open;
+    }
+
+    fn draw_controller_pin_contents(&self, ui: &mut egui::Ui) {
         let pulse_time = ui.input(|input| input.time) as f32;
         let connections = self.controller_connections();
-        let title = if connections.is_empty() {
-            "Controller Pins".to_string()
-        } else {
-            format!("Controller Pins ({})", connections.len())
-        };
-        egui::CollapsingHeader::new(title)
-            .id_salt("controller_pins_section")
-            .default_open(true)
-            .show(ui, |ui| {
-                egui::Frame::group(ui.style()).show(ui, |ui| {
-                    ui.small(
-                        "Auto-wired Arduino pins on the selected CPU, with live simulator state.",
-                    );
-                    ui.add_space(6.0);
-                    if connections.is_empty() {
-                        ui.small("No controller pins are wired to the currently loaded PCB.");
-                        return;
-                    }
-                    egui::ScrollArea::vertical()
-                        .id_salt("board_view_controller_pins_scroll")
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            for connection in &connections {
-                                let activity =
-                                    self.controller_signal_activity(&connection.controller_pin);
-                                let indicator_color =
-                                    connectable_pin_indicator_color(activity, pulse_time);
-                                ui.group(|ui| {
-                                    ui.horizontal_wrapped(|ui| {
-                                        ui.colored_label(indicator_color, "●");
-                                        ui.monospace(&connection.controller_pin);
-                                        ui.small("->");
-                                        ui.label(&connection.pcb_net);
-                                    });
-                                    ui.small(format!(
-                                        "Mode: {}",
-                                        binding_mode_label(connection.mode)
-                                    ));
-                                    ui.small(format!(
-                                        "Pin status: {}",
-                                        self.controller_signal_status_text(
-                                            &connection.controller_pin
-                                        )
-                                    ));
-                                });
-                                ui.add_space(4.0);
-                            }
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.small("Auto-wired Arduino pins on the selected CPU, with live simulator state.");
+            ui.add_space(6.0);
+            if connections.is_empty() {
+                ui.small("No controller pins are wired to the currently loaded PCB.");
+                return;
+            }
+            egui::ScrollArea::vertical()
+                .id_salt("board_view_controller_pins_scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for connection in &connections {
+                        let activity = self.controller_signal_activity(&connection.controller_pin);
+                        let indicator_color = connectable_pin_indicator_color(activity, pulse_time);
+                        ui.group(|ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.colored_label(indicator_color, "●");
+                                ui.monospace(&connection.controller_pin);
+                                ui.small("->");
+                                ui.label(&connection.pcb_net);
+                            });
+                            ui.small(format!("Mode: {}", binding_mode_label(connection.mode)));
+                            ui.small(format!(
+                                "Pin status: {}",
+                                self.controller_signal_status_text(&connection.controller_pin)
+                            ));
                         });
+                        ui.add_space(4.0);
+                    }
                 });
+        });
+    }
+
+    fn show_compile_log_window(&mut self, ctx: &egui::Context) {
+        if !self.compile_log_open {
+            return;
+        }
+        let mut open = self.compile_log_open;
+        egui::Window::new("Compile Log")
+            .open(&mut open)
+            .default_size(egui::vec2(560.0, 320.0))
+            .show(ctx, |ui| {
+                let compile_log = if self.snapshot.compile_log.is_empty() {
+                    "<no compile log yet>".to_string()
+                } else {
+                    self.snapshot.compile_log.clone()
+                };
+                let height = ui.available_height().max(220.0);
+                scrolled_text_block(ui, "compile_log_window", compile_log, height, false);
             });
+        self.compile_log_open = open;
     }
 
     fn draw_module_summary_block(&self, ui: &mut egui::Ui) {
@@ -1239,6 +1389,49 @@ fn summary_row(ui: &mut egui::Ui, label: &str, value: &str) {
     ui.label(RichText::new(label).strong());
     ui.monospace(value);
     ui.end_row();
+}
+
+fn displayed_host_board(selected_board: HostBoard, snapshot: &SimulationSnapshot) -> HostBoard {
+    if snapshot.firmware_path.is_some() {
+        snapshot.board
+    } else {
+        selected_board
+    }
+}
+
+fn host_signals_for_board(board: HostBoard) -> Vec<String> {
+    load_built_in_board_model(board.builtin_board_model())
+        .map(|board| board.nets.into_iter().map(|net| net.name).collect())
+        .unwrap_or_default()
+}
+
+fn load_host_board_preview(board: HostBoard) -> Option<LoadedPcb> {
+    match board {
+        HostBoard::Mega2560Rev3 => {
+            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../examples/pcbs/arduino_mega_2560_rev3e.kicad_pcb");
+            LoadedPcb::load(&path)
+                .ok()
+                .map(LoadedPcb::simplified_preview)
+                .or_else(|| {
+                    load_built_in_board_model(board.builtin_board_model())
+                        .ok()
+                        .map(LoadedPcb::preview)
+                })
+        }
+        HostBoard::NanoV3 => {
+            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../examples/pcbs/arduino_nano_v3_3.kicad_pcb");
+            LoadedPcb::load(&path)
+                .ok()
+                .map(LoadedPcb::simplified_preview)
+                .or_else(|| {
+                    load_built_in_board_model(board.builtin_board_model())
+                        .ok()
+                        .map(LoadedPcb::preview)
+                })
+        }
+    }
 }
 
 fn format_sreg(sreg: u8) -> String {
@@ -2118,7 +2311,7 @@ fn connectable_pin_indicator_color(activity: SignalActivity, pulse_time: f32) ->
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::{collections::BTreeSet, path::PathBuf};
 
     use rust_mcu::{BoardPin, BoardPinLevel};
     use rust_project::{BindingMode, HostBoard, ModuleOverlay};
@@ -2126,11 +2319,11 @@ mod tests {
     use super::{
         auto_wire_module_overlay, available_module_models, candidate_pcb_nets, classify_source,
         common_baud_rates, connectable_pin_indicator_color, controller_signal_suggestions,
-        default_project_name, display_stem_for_path, host_signal_levels_for_snapshot,
-        host_signal_names, infer_binding_mode, module_model_title, module_signal_aliases,
-        module_signal_suggestions, next_module_overlay_name, sanitize_project_name,
-        should_auto_apply_suggestion, AvrSimGuiApp, ControllerConnection, SignalActivity,
-        SourceAction,
+        default_project_name, display_stem_for_path, displayed_host_board,
+        host_signal_levels_for_snapshot, host_signal_names, infer_binding_mode, module_model_title,
+        module_signal_aliases, module_signal_suggestions, next_module_overlay_name,
+        sanitize_project_name, should_auto_apply_suggestion, AvrSimGuiApp, ControllerConnection,
+        SignalActivity, SourceAction,
     };
     use crate::simulation::{SimulationSnapshot, SimulatorStatus};
 
@@ -2157,6 +2350,23 @@ mod tests {
         assert_eq!(
             sanitize_project_name("Main Controller Rev A"),
             "Main-Controller-Rev-A"
+        );
+    }
+
+    #[test]
+    fn displayed_host_board_prefers_selected_target_until_firmware_is_loaded() {
+        let snapshot = SimulationSnapshot::default();
+        assert_eq!(
+            displayed_host_board(HostBoard::NanoV3, &snapshot),
+            HostBoard::NanoV3
+        );
+
+        let mut loaded = SimulationSnapshot::default();
+        loaded.board = HostBoard::Mega2560Rev3;
+        loaded.firmware_path = Some(PathBuf::from("/tmp/blink.hex"));
+        assert_eq!(
+            displayed_host_board(HostBoard::NanoV3, &loaded),
+            HostBoard::Mega2560Rev3
         );
     }
 

@@ -1,0 +1,22 @@
+{
+  "name": "vl53l0x_breakout",
+  "title": "VL53L0X ToF Distance Breakout (Logical Model)",
+  "components": [
+    {
+      "template": "module",
+      "reference": "U1",
+      "value": "VL53L0X",
+      "footprint": "Virtual:VL53L0X_Breakout",
+      "signals": ["SDA", "SCL", "XSHUT", "GPIO1", "VCC", "GND"],
+      "position": { "x_mm": 28.0, "y_mm": 14.0 }
+    },
+    {
+      "template": "header",
+      "reference": "J1",
+      "value": "I2C + Control",
+      "footprint": "Virtual:Header_1x06_2.54mm",
+      "signals": ["SDA", "SCL", "XSHUT", "GPIO1", "VCC", "GND"],
+      "position": { "x_mm": 5.0, "y_mm": 5.0 }
+    }
+  ]
+}

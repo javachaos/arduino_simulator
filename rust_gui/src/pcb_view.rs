@@ -3,8 +3,8 @@ use std::path::Path;
 
 use eframe::egui::{self, Color32, Pos2, Rect, RichText, Sense, Shape, Stroke, Vec2};
 use rust_board::{
-    board_from_kicad_pcb, layout_from_kicad_pcb, Board, BoardLayout, Bounds, LinePrimitive,
-    PadGeometry, Point, ViaGeometry,
+    board_from_kicad_pcb, layout_from_kicad_pcb, Board, BoardLayout, Bounds, Component,
+    FootprintLayout, LinePrimitive, PadGeometry, Point, TextPrimitive, ViaGeometry, ZonePolygon,
 };
 use rust_project::{ModuleOverlay, SignalBinding};
 
@@ -31,6 +31,364 @@ impl LoadedPcb {
             net_names,
         })
     }
+
+    pub fn preview(board: Board) -> Self {
+        let layout = preview_layout_from_board(&board);
+        let mut net_names = board
+            .nets
+            .iter()
+            .map(|net| net.name.clone())
+            .collect::<Vec<_>>();
+        net_names.sort();
+        Self {
+            board,
+            layout,
+            net_names,
+        }
+    }
+
+    pub fn simplified_preview(mut self) -> Self {
+        self.layout
+            .drawings
+            .retain(|line| preview_graphics_layer(&line.layer));
+        self.layout
+            .tracks
+            .retain(|line| preview_track_layer(&line.layer));
+        self.layout.vias.clear();
+        self.layout.zones.clear();
+        self.layout.circles.clear();
+        self.layout.texts.clear();
+        for footprint in &mut self.layout.footprints {
+            footprint
+                .graphics
+                .retain(|line| preview_graphics_layer(&line.layer));
+            footprint.label = None;
+        }
+        self.layout.bounds = recompute_bounds(&self.layout);
+        self
+    }
+}
+
+fn preview_track_layer(layer: &str) -> bool {
+    matches!(layer, "F.Cu" | "B.Cu")
+}
+
+fn preview_graphics_layer(layer: &str) -> bool {
+    matches!(layer, "F.SilkS" | "B.SilkS" | "Edge.Cuts")
+}
+
+fn preview_layout_from_board(board: &Board) -> BoardLayout {
+    let footprints = board
+        .components
+        .iter()
+        .map(preview_footprint_from_component)
+        .collect::<Vec<_>>();
+    let content_bounds = preview_content_bounds(board);
+    let bounds = content_bounds.expand(preview_margin_mm(board));
+
+    BoardLayout {
+        name: board.title.clone().unwrap_or_else(|| board.name.clone()),
+        source_path: format!("builtin-preview://{}", board.name),
+        bounds: bounds.clone(),
+        footprints,
+        edge_cuts: rectangle_lines(
+            &bounds,
+            "Edge.Cuts",
+            0.25,
+            Some(board.name.clone()),
+            Some("board_preview".to_string()),
+            None,
+        ),
+        drawings: Vec::new(),
+        circles: Vec::new(),
+        texts: Vec::new(),
+        tracks: Vec::new(),
+        vias: Vec::new(),
+        zones: vec![ZonePolygon {
+            layer: "F.Cu".to_string(),
+            points: vec![
+                Point::new(bounds.min_x_mm, bounds.min_y_mm),
+                Point::new(bounds.max_x_mm, bounds.min_y_mm),
+                Point::new(bounds.max_x_mm, bounds.max_y_mm),
+                Point::new(bounds.min_x_mm, bounds.max_y_mm),
+            ],
+            name: board.title.clone().or_else(|| Some(board.name.clone())),
+            keepout: false,
+        }],
+    }
+}
+
+fn preview_content_bounds(board: &Board) -> Bounds {
+    let mut bounds = board
+        .components
+        .iter()
+        .map(component_preview_bounds)
+        .collect::<Vec<_>>();
+
+    if bounds.is_empty() {
+        return Bounds::new(0.0, 0.0, 10.0, 10.0);
+    }
+
+    let first = bounds.remove(0);
+    bounds.into_iter().fold(first, merge_bounds)
+}
+
+fn preview_margin_mm(board: &Board) -> f64 {
+    match board.name.as_str() {
+        "arduino_mega_2560_rev3" => 8.0,
+        "arduino_nano_v3" => 5.0,
+        _ => 4.0,
+    }
+}
+
+fn preview_footprint_from_component(component: &Component) -> FootprintLayout {
+    let component_bounds = component_preview_bounds(component);
+    let label_text = component
+        .value
+        .clone()
+        .unwrap_or_else(|| component.reference.clone());
+
+    FootprintLayout {
+        reference: component.reference.clone(),
+        footprint: component.footprint.clone(),
+        layer: component.layer.clone(),
+        position: component_origin(component),
+        pads: component
+            .pads
+            .iter()
+            .map(|pad| PadGeometry {
+                component: component.reference.clone(),
+                number: pad.number.clone(),
+                shape: pad.shape.clone(),
+                pad_type: pad.pad_type.clone(),
+                position: absolute_pad_point(component, pad.position.as_ref()),
+                size_mm: pad.size_mm.unwrap_or((1.2, 1.2)),
+                layers: pad.layers.clone(),
+                net_name: pad.net_name.clone(),
+                rotation_deg: pad
+                    .position
+                    .as_ref()
+                    .and_then(|position| position.rotation_deg)
+                    .or_else(|| {
+                        component
+                            .position
+                            .as_ref()
+                            .and_then(|position| position.rotation_deg)
+                    }),
+                drill_mm: pad.drill_mm.clone(),
+                display_layer: Some(component.layer.clone()),
+            })
+            .collect(),
+        graphics: rectangle_lines(
+            &component_bounds,
+            "F.SilkS",
+            match component.kind.as_str() {
+                "mcu" => 0.35,
+                _ => 0.2,
+            },
+            Some(component.reference.clone()),
+            Some(component.kind.clone()),
+            None,
+        ),
+        label: Some(TextPrimitive {
+            text: label_text,
+            position: Point::new(
+                (component_bounds.min_x_mm + component_bounds.max_x_mm) * 0.5,
+                component_bounds.min_y_mm - 1.6,
+            ),
+            layer: "F.SilkS".to_string(),
+            owner: Some(component.reference.clone()),
+            size_mm: Some((3.2, 1.6)),
+            rotation_deg: None,
+        }),
+        rotation_deg: component
+            .position
+            .as_ref()
+            .and_then(|position| position.rotation_deg),
+    }
+}
+
+fn component_preview_bounds(component: &Component) -> Bounds {
+    let origin = component_origin(component);
+    let pad_points = component
+        .pads
+        .iter()
+        .map(|pad| absolute_pad_point(component, pad.position.as_ref()))
+        .collect::<Vec<_>>();
+    let pad_bounds = points_bounds(&pad_points).unwrap_or_else(|| {
+        Bounds::new(
+            origin.x_mm - 1.0,
+            origin.y_mm - 1.0,
+            origin.x_mm + 1.0,
+            origin.y_mm + 1.0,
+        )
+    });
+
+    let body_bounds = match component.kind.as_str() {
+        "connector" => {
+            let width = 3.8;
+            let horizontal = pad_bounds.width_mm() > pad_bounds.height_mm();
+            if horizontal {
+                Bounds::new(
+                    pad_bounds.min_x_mm - 1.5,
+                    pad_bounds.min_y_mm - (width * 0.5),
+                    pad_bounds.max_x_mm + 1.5,
+                    pad_bounds.max_y_mm + (width * 0.5),
+                )
+            } else {
+                Bounds::new(
+                    pad_bounds.min_x_mm - (width * 0.5),
+                    pad_bounds.min_y_mm - 1.5,
+                    pad_bounds.max_x_mm + (width * 0.5),
+                    pad_bounds.max_y_mm + 1.5,
+                )
+            }
+        }
+        "mcu" => Bounds::new(
+            origin.x_mm - 8.5,
+            origin.y_mm - 8.5,
+            origin.x_mm + 8.5,
+            origin.y_mm + 8.5,
+        ),
+        "module" => Bounds::new(
+            origin.x_mm - 6.5,
+            origin.y_mm - 6.5,
+            origin.x_mm + 6.5,
+            origin.y_mm + 6.5,
+        ),
+        _ => pad_bounds.clone().expand(1.5),
+    };
+
+    merge_bounds(pad_bounds.expand(0.8), body_bounds)
+}
+
+fn component_origin(component: &Component) -> Point {
+    component
+        .position
+        .as_ref()
+        .map(|position| Point::new(position.x_mm, position.y_mm))
+        .unwrap_or_else(|| Point::new(0.0, 0.0))
+}
+
+fn absolute_pad_point(component: &Component, position: Option<&rust_board::Position>) -> Point {
+    let origin = component_origin(component);
+    let local = position
+        .map(|position| Point::new(position.x_mm, position.y_mm))
+        .unwrap_or_else(|| Point::new(0.0, 0.0));
+    Point::new(origin.x_mm + local.x_mm, origin.y_mm + local.y_mm)
+}
+
+fn points_bounds(points: &[Point]) -> Option<Bounds> {
+    let mut iter = points.iter();
+    let first = iter.next()?;
+    let mut min_x = first.x_mm;
+    let mut min_y = first.y_mm;
+    let mut max_x = first.x_mm;
+    let mut max_y = first.y_mm;
+
+    for point in iter {
+        min_x = min_x.min(point.x_mm);
+        min_y = min_y.min(point.y_mm);
+        max_x = max_x.max(point.x_mm);
+        max_y = max_y.max(point.y_mm);
+    }
+
+    Some(Bounds::new(min_x, min_y, max_x, max_y))
+}
+
+fn merge_bounds(left: Bounds, right: Bounds) -> Bounds {
+    Bounds::new(
+        left.min_x_mm.min(right.min_x_mm),
+        left.min_y_mm.min(right.min_y_mm),
+        left.max_x_mm.max(right.max_x_mm),
+        left.max_y_mm.max(right.max_y_mm),
+    )
+}
+
+fn rectangle_lines(
+    bounds: &Bounds,
+    layer: &str,
+    width_mm: f64,
+    owner: Option<String>,
+    owner_kind: Option<String>,
+    net_name: Option<String>,
+) -> Vec<LinePrimitive> {
+    let top_left = Point::new(bounds.min_x_mm, bounds.min_y_mm);
+    let top_right = Point::new(bounds.max_x_mm, bounds.min_y_mm);
+    let bottom_right = Point::new(bounds.max_x_mm, bounds.max_y_mm);
+    let bottom_left = Point::new(bounds.min_x_mm, bounds.max_y_mm);
+
+    [
+        (top_left.clone(), top_right.clone()),
+        (top_right, bottom_right.clone()),
+        (bottom_right, bottom_left.clone()),
+        (bottom_left, top_left),
+    ]
+    .into_iter()
+    .map(|(start, end)| LinePrimitive {
+        start,
+        end,
+        layer: layer.to_string(),
+        width_mm,
+        owner: owner.clone(),
+        owner_kind: owner_kind.clone(),
+        net_name: net_name.clone(),
+        stroke_type: None,
+    })
+    .collect()
+}
+
+fn recompute_bounds(layout: &BoardLayout) -> Bounds {
+    let mut xs = Vec::new();
+    let mut ys = Vec::new();
+
+    let mut push_point = |point: &Point| {
+        xs.push(point.x_mm);
+        ys.push(point.y_mm);
+    };
+
+    for line in layout
+        .edge_cuts
+        .iter()
+        .chain(layout.drawings.iter())
+        .chain(layout.tracks.iter())
+    {
+        push_point(&line.start);
+        push_point(&line.end);
+    }
+
+    for footprint in &layout.footprints {
+        push_point(&footprint.position);
+        for pad in &footprint.pads {
+            let (width_mm, height_mm) = pad.size_mm;
+            let half_width = width_mm * 0.5;
+            let half_height = height_mm * 0.5;
+            push_point(&Point::new(
+                pad.position.x_mm - half_width,
+                pad.position.y_mm - half_height,
+            ));
+            push_point(&Point::new(
+                pad.position.x_mm + half_width,
+                pad.position.y_mm + half_height,
+            ));
+        }
+        for line in &footprint.graphics {
+            push_point(&line.start);
+            push_point(&line.end);
+        }
+    }
+
+    if xs.is_empty() || ys.is_empty() {
+        return layout.bounds.clone();
+    }
+
+    Bounds::new(
+        xs.iter().copied().fold(f64::INFINITY, f64::min),
+        ys.iter().copied().fold(f64::INFINITY, f64::min),
+        xs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        ys.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+    )
+    .expand(2.0)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -611,6 +969,7 @@ mod tests {
     use std::path::PathBuf;
 
     use eframe::egui::pos2;
+    use rust_board::load_built_in_board_model;
     use rust_project::{BindingMode, ModuleOverlay, ModuleSignalBinding, SignalBinding};
 
     use super::{distance_to_segment, net_tooltip_summary, point_in_polygon, LoadedPcb};
@@ -628,6 +987,78 @@ mod tests {
         let loaded = LoadedPcb::load(&example_pcb_path("air_node.kicad_pcb")).expect("loaded pcb");
         assert!(!loaded.net_names.is_empty());
         assert_eq!(loaded.net_names.first().map(String::as_str), Some("+24V"));
+    }
+
+    #[test]
+    fn built_in_board_preview_generates_renderable_layout() {
+        let nano = LoadedPcb::preview(
+            load_built_in_board_model("arduino_nano_v3").expect("nano built-in board"),
+        );
+        let mega = LoadedPcb::preview(
+            load_built_in_board_model("arduino_mega_2560_rev3").expect("mega built-in board"),
+        );
+
+        assert!(!nano.layout.footprints.is_empty());
+        assert!(!nano.layout.edge_cuts.is_empty());
+        assert!(nano.layout.bounds.width_mm() > 0.0);
+        assert!(nano.layout.bounds.height_mm() > 0.0);
+        assert!(nano.net_names.contains(&"D13_SCK".to_string()));
+
+        assert!(!mega.layout.footprints.is_empty());
+        assert!(!mega.layout.edge_cuts.is_empty());
+        assert!(mega.layout.bounds.width_mm() > nano.layout.bounds.width_mm());
+        assert!(mega.net_names.contains(&"D53_SS".to_string()));
+    }
+
+    #[test]
+    fn mega_kicad_preview_filter_keeps_readable_layers() {
+        let mega = LoadedPcb::load(&example_pcb_path("arduino_mega_2560_rev3e.kicad_pcb"))
+            .expect("mega preview pcb")
+            .simplified_preview();
+
+        assert!(!mega.layout.edge_cuts.is_empty());
+        assert!(mega
+            .layout
+            .drawings
+            .iter()
+            .all(|line| { matches!(line.layer.as_str(), "F.SilkS" | "B.SilkS" | "Edge.Cuts") }));
+        assert!(mega
+            .layout
+            .tracks
+            .iter()
+            .all(|line| matches!(line.layer.as_str(), "F.Cu" | "B.Cu")));
+        assert!(mega
+            .layout
+            .footprints
+            .iter()
+            .all(|footprint| footprint.label.is_none()));
+        assert!(mega.layout.bounds.width_mm() > mega.layout.bounds.height_mm());
+    }
+
+    #[test]
+    fn nano_kicad_preview_filter_keeps_readable_layers() {
+        let nano = LoadedPcb::load(&example_pcb_path("arduino_nano_v3_3.kicad_pcb"))
+            .expect("nano preview pcb")
+            .simplified_preview();
+
+        assert!(!nano.layout.edge_cuts.is_empty());
+        assert!(nano
+            .layout
+            .drawings
+            .iter()
+            .all(|line| { matches!(line.layer.as_str(), "F.SilkS" | "B.SilkS" | "Edge.Cuts") }));
+        assert!(nano
+            .layout
+            .tracks
+            .iter()
+            .all(|line| matches!(line.layer.as_str(), "F.Cu" | "B.Cu")));
+        assert!(nano
+            .layout
+            .footprints
+            .iter()
+            .all(|footprint| footprint.label.is_none()));
+        assert!(nano.layout.bounds.width_mm() > 0.0);
+        assert!(nano.layout.bounds.height_mm() > 0.0);
     }
 
     #[test]

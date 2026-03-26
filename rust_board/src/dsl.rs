@@ -1,9 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use serde::Deserialize;
+
 pub const DSL_VERSION: &str = "0.1.0";
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Position {
     pub x_mm: f64,
     pub y_mm: f64,

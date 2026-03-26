@@ -1,0 +1,22 @@
+{
+  "name": "mpu6050_breakout",
+  "title": "MPU6050 6-DoF IMU Breakout (Logical Model)",
+  "components": [
+    {
+      "template": "module",
+      "reference": "U1",
+      "value": "MPU6050",
+      "footprint": "Virtual:MPU6050_Breakout",
+      "signals": ["SDA", "SCL", "INT", "VCC", "GND"],
+      "position": { "x_mm": 26.0, "y_mm": 12.0 }
+    },
+    {
+      "template": "header",
+      "reference": "J1",
+      "value": "I2C + Interrupt",
+      "footprint": "Virtual:Header_1x05_2.54mm",
+      "signals": ["SDA", "SCL", "INT", "VCC", "GND"],
+      "position": { "x_mm": 5.0, "y_mm": 5.0 }
+    }
+  ]
+}

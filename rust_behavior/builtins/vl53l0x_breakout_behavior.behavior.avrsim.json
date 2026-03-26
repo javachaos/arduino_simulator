@@ -1,0 +1,20 @@
+{
+  "kind": "behavior_definition",
+  "format_version": "0.3.0",
+  "name": "vl53l0x_breakout_behavior",
+  "description": "Behavior definition for a common VL53L0X time-of-flight distance I2C breakout.",
+  "engine": "tof_distance_i2c_sensor",
+  "ports": [
+    { "board_port": "SDA", "role": "sda", "note": null },
+    { "board_port": "SCL", "role": "scl", "note": null },
+    { "board_port": "VCC", "role": "vcc", "note": null },
+    { "board_port": "GND", "role": "gnd", "note": null },
+    { "board_port": "XSHUT", "role": "shutdown", "note": null },
+    { "board_port": "GPIO1", "role": "interrupt", "note": null }
+  ],
+  "parameters": {
+    "address": 41,
+    "distance_mm": 250,
+    "signal_valid": true
+  }
+}

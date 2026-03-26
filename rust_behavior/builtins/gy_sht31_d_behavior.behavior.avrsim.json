@@ -1,0 +1,35 @@
+{
+  "kind": "behavior_definition",
+  "format_version": "0.3.0",
+  "name": "gy_sht31_d_behavior",
+  "description": "Behavior definition for the GY-SHT31-D breakout used on the air node.",
+  "engine": "sht31_i2c_sensor",
+  "ports": [
+    {
+      "board_port": "SDA",
+      "role": "sda",
+      "note": null
+    },
+    {
+      "board_port": "SCL",
+      "role": "scl",
+      "note": null
+    },
+    {
+      "board_port": "VCC",
+      "role": "vcc",
+      "note": null
+    },
+    {
+      "board_port": "GND",
+      "role": "gnd",
+      "note": null
+    }
+  ],
+  "parameters": {
+    "address": 68,
+    "measurement_delay_ms": 15,
+    "ambient_temp_c": 21.5,
+    "relative_humidity_percent": 50.0
+  }
+}

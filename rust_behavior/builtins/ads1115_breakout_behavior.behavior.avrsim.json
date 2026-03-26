@@ -1,0 +1,29 @@
+{
+  "kind": "behavior_definition",
+  "format_version": "0.3.0",
+  "name": "ads1115_breakout_behavior",
+  "description": "Behavior definition for a common ADS1115 4-channel I2C ADC breakout.",
+  "engine": "adc4_channel_i2c",
+  "ports": [
+    { "board_port": "SDA", "role": "sda", "note": null },
+    { "board_port": "SCL", "role": "scl", "note": null },
+    { "board_port": "VCC", "role": "vcc", "note": null },
+    { "board_port": "GND", "role": "gnd", "note": null },
+    { "board_port": "AIN0", "role": "ain0", "note": null },
+    { "board_port": "AIN1", "role": "ain1", "note": null },
+    { "board_port": "AIN2", "role": "ain2", "note": null },
+    { "board_port": "AIN3", "role": "ain3", "note": null },
+    { "board_port": "ADDR", "role": "address_select", "note": null },
+    { "board_port": "ALERT", "role": "alert", "note": null }
+  ],
+  "parameters": {
+    "address": 72,
+    "gain_volts": 4.096,
+    "sample_rate_sps": 128,
+    "ain0_v": 0.0,
+    "ain1_v": 0.0,
+    "ain2_v": 0.0,
+    "ain3_v": 0.0,
+    "alert_asserted": false
+  }
+}

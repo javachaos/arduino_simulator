@@ -1,0 +1,61 @@
+{
+  "name": "mcp2515_tja1050_can_module",
+  "title": "MCP2515 + TJA1050 CAN Module (Logical Model)",
+  "components": [
+    {
+      "template": "module",
+      "reference": "U1",
+      "value": "MCP2515 + TJA1050",
+      "footprint": "Virtual:MCP2515_TJA1050_CAN_Module",
+      "signals": [
+        "INT",
+        "SCK",
+        "SI",
+        "SO",
+        "CS",
+        "GND",
+        "VCC",
+        "CANH",
+        "CANL"
+      ],
+      "position": {
+        "x_mm": 32.0,
+        "y_mm": 15.0
+      }
+    },
+    {
+      "template": "header",
+      "reference": "J_HOST",
+      "value": "SPI + Control",
+      "footprint": "Virtual:Header_1x07_2.54mm",
+      "signals": [
+        "INT",
+        "SCK",
+        "SI",
+        "SO",
+        "CS",
+        "GND",
+        "VCC"
+      ],
+      "position": {
+        "x_mm": 5.0,
+        "y_mm": 5.0
+      }
+    },
+    {
+      "template": "header",
+      "reference": "J_CAN",
+      "value": "CAN Bus",
+      "footprint": "Virtual:TerminalBlock_1x03_5.08mm",
+      "signals": [
+        "CANH",
+        "CANL",
+        "GND"
+      ],
+      "position": {
+        "x_mm": 62.0,
+        "y_mm": 5.0
+      }
+    }
+  ]
+}

@@ -8,3 +8,7 @@ description = "Native board DSL and built-in logical board models for arduino_si
 
 [lib]
 path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

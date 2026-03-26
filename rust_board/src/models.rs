@@ -1,17 +1,198 @@
 use std::collections::BTreeMap;
 
+use serde::Deserialize;
+
 use crate::dsl::{derive_nets, Board, Component, DslError, Pad, Position, DSL_VERSION};
 
+const DEFAULT_BOARD_LAYERS: [&str; 3] = ["virtual", "F.Cu", "B.Cu"];
 const HEADER_LAYERS: [&str; 4] = ["F.Cu", "B.Cu", "F.Mask", "B.Mask"];
 const VIRTUAL_LAYERS: [&str; 1] = ["virtual"];
 
-fn unique_signals(signals: &[&str]) -> Vec<String> {
+struct BuiltInBoardAssetRef {
+    name: &'static str,
+    json: &'static str,
+}
+
+const BUILT_IN_BOARD_ASSETS: &[BuiltInBoardAssetRef] = &[
+    BuiltInBoardAssetRef {
+        name: "arduino_mega_2560_rev3",
+        json: include_str!("../builtins/arduino_mega_2560_rev3.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "arduino_nano_v3",
+        json: include_str!("../builtins/arduino_nano_v3.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "gy_sht31_d",
+        json: include_str!("../builtins/gy_sht31_d.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "lc_lm358_pwm_to_0_10v",
+        json: include_str!("../builtins/lc_lm358_pwm_to_0_10v.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "max31865_breakout",
+        json: include_str!("../builtins/max31865_breakout.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "mcp2515_tja1050_can_module",
+        json: include_str!("../builtins/mcp2515_tja1050_can_module.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "aht20_breakout",
+        json: include_str!("../builtins/aht20_breakout.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "ads1115_breakout",
+        json: include_str!("../builtins/ads1115_breakout.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "bh1750_breakout",
+        json: include_str!("../builtins/bh1750_breakout.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "bme280_breakout",
+        json: include_str!("../builtins/bme280_breakout.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "bmp280_breakout",
+        json: include_str!("../builtins/bmp280_breakout.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "ina219_breakout",
+        json: include_str!("../builtins/ina219_breakout.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "max31855_breakout",
+        json: include_str!("../builtins/max31855_breakout.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "max6675_breakout",
+        json: include_str!("../builtins/max6675_breakout.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "mpu6050_breakout",
+        json: include_str!("../builtins/mpu6050_breakout.board.json"),
+    },
+    BuiltInBoardAssetRef {
+        name: "vl53l0x_breakout",
+        json: include_str!("../builtins/vl53l0x_breakout.board.json"),
+    },
+];
+
+#[derive(Debug, Clone, Deserialize)]
+struct BuiltInBoardAsset {
+    name: String,
+    title: Option<String>,
+    #[serde(default)]
+    layers: Vec<String>,
+    components: Vec<BuiltInBoardComponentAsset>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "template", rename_all = "snake_case")]
+enum BuiltInBoardComponentAsset {
+    Header {
+        reference: String,
+        value: String,
+        footprint: String,
+        signals: Vec<String>,
+        position: Position,
+    },
+    Module {
+        reference: String,
+        value: String,
+        footprint: String,
+        signals: Vec<String>,
+        position: Position,
+    },
+    Mcu {
+        reference: String,
+        value: String,
+        footprint: String,
+        signals: Vec<String>,
+        position: Position,
+    },
+}
+
+impl BuiltInBoardAsset {
+    fn into_board(self, expected_name: &str) -> Result<Board, DslError> {
+        if self.name != expected_name {
+            return Err(DslError::new(format!(
+                "built-in board asset name mismatch: expected {expected_name:?}, found {:?}",
+                self.name
+            )));
+        }
+
+        let components = self
+            .components
+            .into_iter()
+            .map(BuiltInBoardComponentAsset::into_component)
+            .collect::<Vec<_>>();
+        let layers = if self.layers.is_empty() {
+            default_board_layers()
+        } else {
+            self.layers
+        };
+
+        Ok(Board {
+            name: self.name.clone(),
+            source_path: format!("builtin://{}", self.name),
+            components: components.clone(),
+            nets: derive_nets(&components),
+            source_format: "builtin".to_string(),
+            title: self.title,
+            generator: Some("arduino_simulator".to_string()),
+            generator_version: Some(DSL_VERSION.to_string()),
+            board_version: None,
+            paper: None,
+            layers,
+        })
+    }
+}
+
+impl BuiltInBoardComponentAsset {
+    fn into_component(self) -> Component {
+        match self {
+            Self::Header {
+                reference,
+                value,
+                footprint,
+                signals,
+                position,
+            } => header_component(&reference, &value, &footprint, &signals, position),
+            Self::Module {
+                reference,
+                value,
+                footprint,
+                signals,
+                position,
+            } => module_component(&reference, &value, &footprint, &signals, position),
+            Self::Mcu {
+                reference,
+                value,
+                footprint,
+                signals,
+                position,
+            } => mcu_component(&reference, &value, &footprint, &signals, position),
+        }
+    }
+}
+
+fn default_board_layers() -> Vec<String> {
+    DEFAULT_BOARD_LAYERS
+        .iter()
+        .map(|layer| (*layer).to_string())
+        .collect()
+}
+
+fn unique_signals(signals: &[String]) -> Vec<String> {
     let mut ordered = Vec::new();
     for signal in signals {
         if ordered.iter().any(|existing| existing == signal) {
             continue;
         }
-        ordered.push((*signal).to_string());
+        ordered.push(signal.clone());
     }
     ordered
 }
@@ -20,7 +201,7 @@ fn header_component(
     reference: &str,
     value: &str,
     footprint: &str,
-    signals: &[&str],
+    signals: &[String],
     position: Position,
 ) -> Component {
     let pads = signals
@@ -34,7 +215,7 @@ fn header_component(
                 .iter()
                 .map(|value| (*value).to_string())
                 .collect(),
-            net_name: Some((*signal).to_string()),
+            net_name: Some(signal.clone()),
             net_code: None,
             position: Some(Position::new(0.0, (index as f64) * 2.54, None)),
             size_mm: Some((1.7, 1.7)),
@@ -65,6 +246,7 @@ fn virtual_signal_component(
     signals: &[String],
     position: Position,
 ) -> Component {
+    let signals = unique_signals(signals);
     let split = signals.len().div_ceil(2);
     let pads = signals
         .iter()
@@ -103,97 +285,6 @@ fn virtual_signal_component(
     }
 }
 
-fn build_board(name: &str, title: &str, components: Vec<Component>) -> Board {
-    Board {
-        name: name.to_string(),
-        title: Some(title.to_string()),
-        source_format: "builtin".to_string(),
-        source_path: format!("builtin://{name}"),
-        generator: Some("avrsim".to_string()),
-        generator_version: Some(DSL_VERSION.to_string()),
-        board_version: None,
-        paper: None,
-        layers: vec![
-            "virtual".to_string(),
-            "F.Cu".to_string(),
-            "B.Cu".to_string(),
-        ],
-        nets: derive_nets(&components),
-        components,
-    }
-}
-
-pub fn build_arduino_mega_2560_rev3_board() -> Board {
-    let power_signals = ["IOREF", "RESET", "+3V3", "+5V", "GND", "GND", "VIN", "AREF"];
-    let analog_signals = [
-        "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13",
-        "A14", "A15",
-    ];
-    let digital_low_signals = [
-        "D0_RX0", "D1_TX0", "D2", "D3_PWM", "D4", "D5_PWM", "D6_PWM", "D7", "D8", "D9_PWM",
-        "D10_PWM", "D11_PWM", "D12", "D13", "D14_TX3", "D15_RX3", "D16_TX2", "D17_RX2", "D18_TX1",
-        "D19_RX1", "D20_SDA", "D21_SCL",
-    ];
-    let digital_high_signals = [
-        "D22", "D23", "D24", "D25", "D26", "D27", "D28", "D29", "D30", "D31", "D32", "D33", "D34",
-        "D35", "D36", "D37", "D38", "D39", "D40", "D41", "D42", "D43", "D44_PWM", "D45_PWM",
-        "D46_PWM", "D47", "D48", "D49", "D50_MISO", "D51_MOSI", "D52_SCK", "D53_SS",
-    ];
-    let exposed_signals = unique_signals(
-        &power_signals
-            .iter()
-            .chain(analog_signals.iter())
-            .chain(digital_low_signals.iter())
-            .chain(digital_high_signals.iter())
-            .copied()
-            .collect::<Vec<_>>(),
-    );
-
-    let components = vec![
-        mcu_component(
-            "U1",
-            "ATmega2560",
-            "Virtual:ATmega2560_BoardAbstraction",
-            &exposed_signals,
-            Position::new(55.0, 25.0, None),
-        ),
-        header_component(
-            "J_POWER",
-            "POWER",
-            "Virtual:Header_1x08_2.54mm",
-            &power_signals,
-            Position::new(5.0, 5.0, None),
-        ),
-        header_component(
-            "J_ANALOG",
-            "ANALOG A0-A15",
-            "Virtual:Header_1x16_2.54mm",
-            &analog_signals,
-            Position::new(20.0, 5.0, None),
-        ),
-        header_component(
-            "J_DIGITAL_LOW",
-            "DIGITAL D0-D21",
-            "Virtual:Header_1x22_2.54mm",
-            &digital_low_signals,
-            Position::new(95.0, 5.0, None),
-        ),
-        header_component(
-            "J_DIGITAL_HIGH",
-            "DIGITAL D22-D53",
-            "Virtual:Header_1x32_2.54mm",
-            &digital_high_signals,
-            Position::new(120.0, 5.0, None),
-        ),
-    ];
-
-    build_board(
-        "arduino_mega_2560_rev3",
-        "Arduino Mega 2560 Rev3 (Logical Model)",
-        components,
-    )
-}
-
 fn mcu_component(
     reference: &str,
     value: &str,
@@ -230,240 +321,57 @@ fn module_component(
     )
 }
 
+fn load_builtin_board_asset(board_name: &str) -> Result<Board, DslError> {
+    let asset = BUILT_IN_BOARD_ASSETS
+        .iter()
+        .find(|asset| asset.name == board_name)
+        .ok_or_else(|| {
+            DslError::new(format!(
+                "unknown built-in board model {board_name:?}; available models: {}",
+                built_in_board_model_names().join(", ")
+            ))
+        })?;
+    let parsed = serde_json::from_str::<BuiltInBoardAsset>(asset.json).map_err(|error| {
+        DslError::new(format!(
+            "invalid built-in board asset {board_name:?}: {error}"
+        ))
+    })?;
+    parsed.into_board(asset.name)
+}
+
+pub fn build_arduino_mega_2560_rev3_board() -> Board {
+    load_builtin_board_asset("arduino_mega_2560_rev3").expect("valid built-in board asset")
+}
+
 pub fn build_gy_sht31_d_board() -> Board {
-    let bus_signals = ["SDA", "SCL", "VCC", "GND"];
-    let exposed_signals = unique_signals(&bus_signals);
-
-    let components = vec![
-        module_component(
-            "U1",
-            "GY-SHT31-D",
-            "Virtual:GY-SHT31-D_BoardAbstraction",
-            &exposed_signals,
-            Position::new(22.0, 12.0, None),
-        ),
-        header_component(
-            "J1",
-            "I2C + Power",
-            "Virtual:Header_1x04_2.54mm",
-            &bus_signals,
-            Position::new(5.0, 5.0, None),
-        ),
-    ];
-
-    build_board(
-        "gy_sht31_d",
-        "GY-SHT31-D SHT31 Breakout (Logical Model)",
-        components,
-    )
+    load_builtin_board_asset("gy_sht31_d").expect("valid built-in board asset")
 }
 
 pub fn build_mcp2515_tja1050_can_module_board() -> Board {
-    let host_signals = ["INT", "SCK", "SI", "SO", "CS", "GND", "VCC"];
-    let can_signals = ["CANH", "CANL", "GND"];
-    let exposed_signals = unique_signals(
-        &host_signals
-            .iter()
-            .chain(can_signals.iter())
-            .copied()
-            .collect::<Vec<_>>(),
-    );
-
-    let components = vec![
-        module_component(
-            "U1",
-            "MCP2515 + TJA1050",
-            "Virtual:MCP2515_TJA1050_CAN_Module",
-            &exposed_signals,
-            Position::new(32.0, 15.0, None),
-        ),
-        header_component(
-            "J_HOST",
-            "SPI + Control",
-            "Virtual:Header_1x07_2.54mm",
-            &host_signals,
-            Position::new(5.0, 5.0, None),
-        ),
-        header_component(
-            "J_CAN",
-            "CAN Bus",
-            "Virtual:TerminalBlock_1x03_5.08mm",
-            &can_signals,
-            Position::new(62.0, 5.0, None),
-        ),
-    ];
-
-    build_board(
-        "mcp2515_tja1050_can_module",
-        "MCP2515 + TJA1050 CAN Module (Logical Model)",
-        components,
-    )
+    load_builtin_board_asset("mcp2515_tja1050_can_module").expect("valid built-in board asset")
 }
 
 pub fn build_max31865_breakout_board() -> Board {
-    let host_signals = ["CLK", "SDO", "SDI", "CS", "VCC", "GND"];
-    let rtd_signals = ["F+", "F-", "RTD+", "RTD-"];
-    let exposed_signals = unique_signals(
-        &host_signals
-            .iter()
-            .chain(rtd_signals.iter())
-            .copied()
-            .collect::<Vec<_>>(),
-    );
-
-    let components = vec![
-        module_component(
-            "U1",
-            "MAX31865",
-            "Virtual:MAX31865_Breakout",
-            &exposed_signals,
-            Position::new(28.0, 15.0, None),
-        ),
-        header_component(
-            "J_HOST",
-            "SPI + Power",
-            "Virtual:Header_1x06_2.54mm",
-            &host_signals,
-            Position::new(5.0, 5.0, None),
-        ),
-        header_component(
-            "J_RTD",
-            "RTD Probe",
-            "Virtual:TerminalBlock_1x04_3.50mm",
-            &rtd_signals,
-            Position::new(58.0, 5.0, None),
-        ),
-    ];
-
-    build_board(
-        "max31865_breakout",
-        "MAX31865 RTD Breakout (Logical Model)",
-        components,
-    )
+    load_builtin_board_asset("max31865_breakout").expect("valid built-in board asset")
 }
 
 pub fn build_lc_lm358_pwm_to_0_10v_board() -> Board {
-    let pwm_input_signals = ["GND", "PWM"];
-    let analog_output_signals = ["GND", "VOUT"];
-    let power_signals = ["GND", "VCC"];
-    let exposed_signals = unique_signals(
-        &pwm_input_signals
-            .iter()
-            .chain(analog_output_signals.iter())
-            .chain(power_signals.iter())
-            .copied()
-            .collect::<Vec<_>>(),
-    );
-
-    let components = vec![
-        module_component(
-            "U1",
-            "LC-LM358-PWM2V",
-            "Virtual:LC-LM358-PWM2V_Module",
-            &exposed_signals,
-            Position::new(28.0, 18.0, None),
-        ),
-        header_component(
-            "J_OUT",
-            "0-10V Output",
-            "Virtual:TerminalBlock_1x02_5.08mm",
-            &analog_output_signals,
-            Position::new(5.0, 5.0, None),
-        ),
-        header_component(
-            "J_PWM",
-            "PWM Input",
-            "Virtual:TerminalBlock_1x02_5.08mm",
-            &pwm_input_signals,
-            Position::new(30.0, 5.0, None),
-        ),
-        header_component(
-            "J_PWR",
-            "Module Power",
-            "Virtual:TerminalBlock_1x02_5.08mm",
-            &power_signals,
-            Position::new(55.0, 5.0, None),
-        ),
-    ];
-
-    build_board(
-        "lc_lm358_pwm_to_0_10v",
-        "LC-LM358 PWM to 0-10V Module (Logical Model)",
-        components,
-    )
+    load_builtin_board_asset("lc_lm358_pwm_to_0_10v").expect("valid built-in board asset")
 }
 
 pub fn build_arduino_nano_v3_board() -> Board {
-    let left_header_signals = [
-        "D13_SCK", "+3V3", "AREF", "A0", "A1", "A2", "A3", "A4_SDA", "A5_SCL", "A6", "A7", "+5V",
-        "RESET", "GND", "VIN",
-    ];
-    let right_header_signals = [
-        "D12_MISO", "D11_MOSI", "D10_SS", "D9_PWM", "D8", "D7", "D6_PWM", "D5_PWM", "D4", "D3_PWM",
-        "D2", "GND", "RESET", "D0_RX", "D1_TX",
-    ];
-    let exposed_signals = unique_signals(
-        &left_header_signals
-            .iter()
-            .chain(right_header_signals.iter())
-            .copied()
-            .collect::<Vec<_>>(),
-    );
-    let components = vec![
-        mcu_component(
-            "U1",
-            "ATmega328P",
-            "Virtual:ATmega328P_BoardAbstraction",
-            &exposed_signals,
-            Position::new(25.0, 20.0, None),
-        ),
-        header_component(
-            "J_LEFT",
-            "LEFT HEADER",
-            "Virtual:Header_1x15_2.54mm",
-            &left_header_signals,
-            Position::new(5.0, 5.0, None),
-        ),
-        header_component(
-            "J_RIGHT",
-            "RIGHT HEADER",
-            "Virtual:Header_1x15_2.54mm",
-            &right_header_signals,
-            Position::new(45.0, 5.0, None),
-        ),
-    ];
-
-    build_board(
-        "arduino_nano_v3",
-        "Arduino Nano V3 (Logical Model)",
-        components,
-    )
+    load_builtin_board_asset("arduino_nano_v3").expect("valid built-in board asset")
 }
 
 pub fn built_in_board_model_names() -> Vec<&'static str> {
-    vec![
-        "arduino_mega_2560_rev3",
-        "arduino_nano_v3",
-        "gy_sht31_d",
-        "lc_lm358_pwm_to_0_10v",
-        "max31865_breakout",
-        "mcp2515_tja1050_can_module",
-    ]
+    BUILT_IN_BOARD_ASSETS
+        .iter()
+        .map(|asset| asset.name)
+        .collect()
 }
 
 pub fn load_built_in_board_model(board_name: &str) -> Result<Board, DslError> {
-    match board_name {
-        "arduino_mega_2560_rev3" => Ok(build_arduino_mega_2560_rev3_board()),
-        "arduino_nano_v3" => Ok(build_arduino_nano_v3_board()),
-        "gy_sht31_d" => Ok(build_gy_sht31_d_board()),
-        "lc_lm358_pwm_to_0_10v" => Ok(build_lc_lm358_pwm_to_0_10v_board()),
-        "max31865_breakout" => Ok(build_max31865_breakout_board()),
-        "mcp2515_tja1050_can_module" => Ok(build_mcp2515_tja1050_can_module_board()),
-        _ => Err(DslError::new(format!(
-            "unknown built-in board model {board_name:?}; available models: {}",
-            built_in_board_model_names().join(", ")
-        ))),
-    }
+    load_builtin_board_asset(board_name)
 }
 
 #[cfg(test)]
@@ -518,7 +426,17 @@ mod tests {
                 "gy_sht31_d",
                 "lc_lm358_pwm_to_0_10v",
                 "max31865_breakout",
-                "mcp2515_tja1050_can_module"
+                "mcp2515_tja1050_can_module",
+                "aht20_breakout",
+                "ads1115_breakout",
+                "bh1750_breakout",
+                "bme280_breakout",
+                "bmp280_breakout",
+                "ina219_breakout",
+                "max31855_breakout",
+                "max6675_breakout",
+                "mpu6050_breakout",
+                "vl53l0x_breakout"
             ]
         );
     }
@@ -666,5 +584,22 @@ mod tests {
             sensor.title.as_deref(),
             Some("GY-SHT31-D SHT31 Breakout (Logical Model)")
         );
+    }
+
+    #[test]
+    fn new_builtin_sensor_models_load_with_expected_ports() {
+        let bme = load_built_in_board_model("bme280_breakout").expect("bme");
+        let bme_header = component_by_ref(&bme, "J1");
+        assert_eq!(pad_net(bme_header, "1"), Some("SDA"));
+        assert_eq!(pad_net(bme_header, "5"), Some("GND"));
+
+        let ads = load_built_in_board_model("ads1115_breakout").expect("ads");
+        let analog = component_by_ref(&ads, "J_IN");
+        assert_eq!(pad_net(analog, "1"), Some("AIN0"));
+        assert_eq!(pad_net(analog, "4"), Some("AIN3"));
+
+        let imu = load_built_in_board_model("mpu6050_breakout").expect("imu");
+        let imu_header = component_by_ref(&imu, "J1");
+        assert_eq!(pad_net(imu_header, "3"), Some("INT"));
     }
 }

@@ -1,0 +1,64 @@
+{
+  "name": "lc_lm358_pwm_to_0_10v",
+  "title": "LC-LM358 PWM to 0-10V Module (Logical Model)",
+  "components": [
+    {
+      "template": "module",
+      "reference": "U1",
+      "value": "LC-LM358-PWM2V",
+      "footprint": "Virtual:LC-LM358-PWM2V_Module",
+      "signals": [
+        "GND",
+        "PWM",
+        "VOUT",
+        "VCC"
+      ],
+      "position": {
+        "x_mm": 28.0,
+        "y_mm": 18.0
+      }
+    },
+    {
+      "template": "header",
+      "reference": "J_OUT",
+      "value": "0-10V Output",
+      "footprint": "Virtual:TerminalBlock_1x02_5.08mm",
+      "signals": [
+        "GND",
+        "VOUT"
+      ],
+      "position": {
+        "x_mm": 5.0,
+        "y_mm": 5.0
+      }
+    },
+    {
+      "template": "header",
+      "reference": "J_PWM",
+      "value": "PWM Input",
+      "footprint": "Virtual:TerminalBlock_1x02_5.08mm",
+      "signals": [
+        "GND",
+        "PWM"
+      ],
+      "position": {
+        "x_mm": 30.0,
+        "y_mm": 5.0
+      }
+    },
+    {
+      "template": "header",
+      "reference": "J_PWR",
+      "value": "Module Power",
+      "footprint": "Virtual:TerminalBlock_1x02_5.08mm",
+      "signals": [
+        "GND",
+        "VCC"
+      ],
+      "position": {
+        "x_mm": 55.0,
+        "y_mm": 5.0
+      }
+    }
+  ]
+}

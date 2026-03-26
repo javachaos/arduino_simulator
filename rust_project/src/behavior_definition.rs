@@ -11,6 +11,14 @@ use crate::shared::PROJECT_FORMAT_VERSION;
 #[serde(rename_all = "snake_case")]
 pub enum BehaviorEngine {
     Sht31I2cSensor,
+    TempHumidityI2cSensor,
+    EnvironmentalI2cSensor,
+    AmbientLightI2cSensor,
+    PowerMonitorI2cSensor,
+    Imu6DofI2cSensor,
+    Adc4ChannelI2c,
+    TofDistanceI2cSensor,
+    ThermocoupleSpiSensor,
     Mcp2515CanModule,
     Max31865RtdFrontend,
     PwmToVoltage,
@@ -20,6 +28,14 @@ impl BehaviorEngine {
     pub fn label(self) -> &'static str {
         match self {
             Self::Sht31I2cSensor => "SHT31 I2C Sensor",
+            Self::TempHumidityI2cSensor => "Temperature and Humidity I2C Sensor",
+            Self::EnvironmentalI2cSensor => "Environmental I2C Sensor",
+            Self::AmbientLightI2cSensor => "Ambient Light I2C Sensor",
+            Self::PowerMonitorI2cSensor => "Power Monitor I2C Sensor",
+            Self::Imu6DofI2cSensor => "6-DoF IMU I2C Sensor",
+            Self::Adc4ChannelI2c => "4-Channel ADC I2C Sensor",
+            Self::TofDistanceI2cSensor => "Time-of-Flight Distance I2C Sensor",
+            Self::ThermocoupleSpiSensor => "Thermocouple SPI Sensor",
             Self::Mcp2515CanModule => "MCP2515 CAN Module",
             Self::Max31865RtdFrontend => "MAX31865 RTD Frontend",
             Self::PwmToVoltage => "PWM to Voltage",

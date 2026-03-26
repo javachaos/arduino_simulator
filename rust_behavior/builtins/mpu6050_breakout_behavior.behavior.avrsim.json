@@ -1,0 +1,25 @@
+{
+  "kind": "behavior_definition",
+  "format_version": "0.3.0",
+  "name": "mpu6050_breakout_behavior",
+  "description": "Behavior definition for a common MPU6050 6-DoF IMU I2C breakout.",
+  "engine": "imu6_dof_i2c_sensor",
+  "ports": [
+    { "board_port": "SDA", "role": "sda", "note": null },
+    { "board_port": "SCL", "role": "scl", "note": null },
+    { "board_port": "VCC", "role": "vcc", "note": null },
+    { "board_port": "GND", "role": "gnd", "note": null },
+    { "board_port": "INT", "role": "interrupt", "note": null }
+  ],
+  "parameters": {
+    "address": 104,
+    "accel_x_g": 0.0,
+    "accel_y_g": 0.0,
+    "accel_z_g": 1.0,
+    "gyro_x_dps": 0.0,
+    "gyro_y_dps": 0.0,
+    "gyro_z_dps": 0.0,
+    "temperature_c": 24.0,
+    "interrupt_asserted": false
+  }
+}

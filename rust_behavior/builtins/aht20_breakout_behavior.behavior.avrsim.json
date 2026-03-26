@@ -1,0 +1,19 @@
+{
+  "kind": "behavior_definition",
+  "format_version": "0.3.0",
+  "name": "aht20_breakout_behavior",
+  "description": "Behavior definition for a common AHT20 I2C temperature and humidity breakout.",
+  "engine": "temp_humidity_i2c_sensor",
+  "ports": [
+    { "board_port": "SDA", "role": "sda", "note": null },
+    { "board_port": "SCL", "role": "scl", "note": null },
+    { "board_port": "VCC", "role": "vcc", "note": null },
+    { "board_port": "GND", "role": "gnd", "note": null }
+  ],
+  "parameters": {
+    "address": 56,
+    "measurement_delay_ms": 80,
+    "temperature_c": 21.5,
+    "relative_humidity_percent": 50.0
+  }
+}

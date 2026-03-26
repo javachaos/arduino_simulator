@@ -1,0 +1,30 @@
+{
+  "name": "max31855_breakout",
+  "title": "MAX31855 Thermocouple Breakout (Logical Model)",
+  "components": [
+    {
+      "template": "module",
+      "reference": "U1",
+      "value": "MAX31855",
+      "footprint": "Virtual:MAX31855_Breakout",
+      "signals": ["SCK", "SO", "CS", "VCC", "GND", "T+", "T-"],
+      "position": { "x_mm": 28.0, "y_mm": 14.0 }
+    },
+    {
+      "template": "header",
+      "reference": "J_HOST",
+      "value": "SPI + Power",
+      "footprint": "Virtual:Header_1x05_2.54mm",
+      "signals": ["SCK", "SO", "CS", "VCC", "GND"],
+      "position": { "x_mm": 5.0, "y_mm": 5.0 }
+    },
+    {
+      "template": "header",
+      "reference": "J_TC",
+      "value": "Thermocouple",
+      "footprint": "Virtual:TerminalBlock_1x02_5.08mm",
+      "signals": ["T+", "T-"],
+      "position": { "x_mm": 40.0, "y_mm": 5.0 }
+    }
+  ]
+}

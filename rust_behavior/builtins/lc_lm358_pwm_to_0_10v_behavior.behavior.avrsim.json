@@ -1,0 +1,35 @@
+{
+  "kind": "behavior_definition",
+  "format_version": "0.3.0",
+  "name": "lc_lm358_pwm_to_0_10v_behavior",
+  "description": "Behavior definition for the LC-LM358 PWM to 0-10V interface board.",
+  "engine": "pwm_to_voltage",
+  "ports": [
+    {
+      "board_port": "GND",
+      "role": "gnd",
+      "note": null
+    },
+    {
+      "board_port": "PWM",
+      "role": "pwm_input",
+      "note": null
+    },
+    {
+      "board_port": "VOUT",
+      "role": "analog_output",
+      "note": null
+    },
+    {
+      "board_port": "VCC",
+      "role": "vcc",
+      "note": null
+    }
+  ],
+  "parameters": {
+    "supply_voltage": 12.0,
+    "output_min_voltage": 0.0,
+    "output_max_voltage": 10.0,
+    "pwm_duty": 0.0
+  }
+}

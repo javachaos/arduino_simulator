@@ -2653,11 +2653,16 @@ name = "rust_behavior"
 version = "0.1.0"
 dependencies = [
  "rust_project",
+ "serde_json",
 ]
 
 [[package]]
 name = "rust_board"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "rust_cpu"

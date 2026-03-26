@@ -11,3 +11,4 @@ path = "src/lib.rs"
 
 [dependencies]
 rust_project = { path = "../rust_project" }
+serde_json = "1"

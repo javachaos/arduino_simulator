@@ -1,0 +1,30 @@
+{
+  "name": "ina219_breakout",
+  "title": "INA219 Current and Power Monitor Breakout (Logical Model)",
+  "components": [
+    {
+      "template": "module",
+      "reference": "U1",
+      "value": "INA219",
+      "footprint": "Virtual:INA219_Breakout",
+      "signals": ["SDA", "SCL", "ALERT", "VCC", "GND", "VIN+", "VIN-"],
+      "position": { "x_mm": 28.0, "y_mm": 14.0 }
+    },
+    {
+      "template": "header",
+      "reference": "J_CTRL",
+      "value": "I2C + Power",
+      "footprint": "Virtual:Header_1x05_2.54mm",
+      "signals": ["SDA", "SCL", "ALERT", "VCC", "GND"],
+      "position": { "x_mm": 5.0, "y_mm": 5.0 }
+    },
+    {
+      "template": "header",
+      "reference": "J_SENSE",
+      "value": "Current Sense",
+      "footprint": "Virtual:TerminalBlock_1x02_5.08mm",
+      "signals": ["VIN+", "VIN-"],
+      "position": { "x_mm": 46.0, "y_mm": 5.0 }
+    }
+  ]
+}

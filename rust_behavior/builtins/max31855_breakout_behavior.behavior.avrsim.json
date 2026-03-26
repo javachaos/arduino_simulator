@@ -1,0 +1,24 @@
+{
+  "kind": "behavior_definition",
+  "format_version": "0.3.0",
+  "name": "max31855_breakout_behavior",
+  "description": "Behavior definition for a common MAX31855 SPI thermocouple breakout.",
+  "engine": "thermocouple_spi_sensor",
+  "ports": [
+    { "board_port": "SCK", "role": "spi_sck", "note": null },
+    { "board_port": "SO", "role": "spi_miso", "note": null },
+    { "board_port": "CS", "role": "spi_cs", "note": null },
+    { "board_port": "VCC", "role": "vcc", "note": null },
+    { "board_port": "GND", "role": "gnd", "note": null },
+    { "board_port": "T+", "role": "thermocouple_positive", "note": null },
+    { "board_port": "T-", "role": "thermocouple_negative", "note": null }
+  ],
+  "parameters": {
+    "temperature_c": 25.0,
+    "internal_temp_c": 23.0,
+    "fault_open": false,
+    "fault_short_to_gnd": false,
+    "fault_short_to_vcc": false,
+    "has_internal_temp": true
+  }
+}

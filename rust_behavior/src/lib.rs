@@ -1,6 +1,13 @@
+mod builtins;
+
 use rust_project::{
-    BehaviorDefinition, BehaviorEngine, BehaviorPortBinding, BehaviorValue, DefinitionReference,
+    BehaviorDefinition, BehaviorEngine, BehaviorValue, DefinitionReference,
     DefinitionReferenceKind, ProjectError,
+};
+
+pub use builtins::{
+    built_in_behavior_names, load_built_in_behavior_definition,
+    suggested_builtin_behavior_for_board_model,
 };
 
 #[derive(Debug)]
@@ -83,8 +90,92 @@ pub struct PwmToVoltageBehavior {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct TempHumidityI2cBehavior {
+    pub address: u8,
+    pub measurement_delay_ms: u64,
+    pub temperature_c: f64,
+    pub relative_humidity_percent: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnvironmentalI2cBehavior {
+    pub address: u8,
+    pub measurement_delay_ms: u64,
+    pub temperature_c: f64,
+    pub pressure_hpa: f64,
+    pub relative_humidity_percent: f64,
+    pub supports_humidity: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AmbientLightI2cBehavior {
+    pub address: u8,
+    pub illuminance_lux: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PowerMonitorI2cBehavior {
+    pub address: u8,
+    pub bus_voltage_v: f64,
+    pub shunt_voltage_mv: f64,
+    pub current_ma: f64,
+    pub power_mw: f64,
+    pub alert_asserted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Imu6DofI2cBehavior {
+    pub address: u8,
+    pub accel_x_g: f64,
+    pub accel_y_g: f64,
+    pub accel_z_g: f64,
+    pub gyro_x_dps: f64,
+    pub gyro_y_dps: f64,
+    pub gyro_z_dps: f64,
+    pub temperature_c: f64,
+    pub interrupt_asserted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Adc4ChannelI2cBehavior {
+    pub address: u8,
+    pub gain_volts: f64,
+    pub sample_rate_sps: u32,
+    pub ain0_v: f64,
+    pub ain1_v: f64,
+    pub ain2_v: f64,
+    pub ain3_v: f64,
+    pub alert_asserted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TofDistanceI2cBehavior {
+    pub address: u8,
+    pub distance_mm: u32,
+    pub signal_valid: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThermocoupleSpiBehavior {
+    pub temperature_c: f64,
+    pub internal_temp_c: f64,
+    pub fault_open: bool,
+    pub fault_short_to_gnd: bool,
+    pub fault_short_to_vcc: bool,
+    pub has_internal_temp: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum BehaviorInstance {
     Sht31(Sht31Behavior),
+    TempHumidityI2c(TempHumidityI2cBehavior),
+    EnvironmentalI2c(EnvironmentalI2cBehavior),
+    AmbientLightI2c(AmbientLightI2cBehavior),
+    PowerMonitorI2c(PowerMonitorI2cBehavior),
+    Imu6DofI2c(Imu6DofI2cBehavior),
+    Adc4ChannelI2c(Adc4ChannelI2cBehavior),
+    TofDistanceI2c(TofDistanceI2cBehavior),
+    ThermocoupleSpi(ThermocoupleSpiBehavior),
     Mcp2515(Mcp2515Behavior),
     Max31865(Max31865Behavior),
     PwmToVoltage(PwmToVoltageBehavior),
@@ -94,6 +185,14 @@ impl BehaviorInstance {
     pub fn engine(&self) -> BehaviorEngine {
         match self {
             Self::Sht31(_) => BehaviorEngine::Sht31I2cSensor,
+            Self::TempHumidityI2c(_) => BehaviorEngine::TempHumidityI2cSensor,
+            Self::EnvironmentalI2c(_) => BehaviorEngine::EnvironmentalI2cSensor,
+            Self::AmbientLightI2c(_) => BehaviorEngine::AmbientLightI2cSensor,
+            Self::PowerMonitorI2c(_) => BehaviorEngine::PowerMonitorI2cSensor,
+            Self::Imu6DofI2c(_) => BehaviorEngine::Imu6DofI2cSensor,
+            Self::Adc4ChannelI2c(_) => BehaviorEngine::Adc4ChannelI2c,
+            Self::TofDistanceI2c(_) => BehaviorEngine::TofDistanceI2cSensor,
+            Self::ThermocoupleSpi(_) => BehaviorEngine::ThermocoupleSpiSensor,
             Self::Mcp2515(_) => BehaviorEngine::Mcp2515CanModule,
             Self::Max31865(_) => BehaviorEngine::Max31865RtdFrontend,
             Self::PwmToVoltage(_) => BehaviorEngine::PwmToVoltage,
@@ -111,6 +210,94 @@ impl BehaviorInstance {
                     model.measurement_delay_ms
                 ),
             ],
+            Self::TempHumidityI2c(model) => vec![
+                format!("I2C temp/rh addr=0x{:02X}", model.address),
+                format!(
+                    "temp={:.2}C rh={:.2}% delay={}ms",
+                    model.temperature_c,
+                    model.relative_humidity_percent,
+                    model.measurement_delay_ms
+                ),
+            ],
+            Self::EnvironmentalI2c(model) => {
+                let mut lines = vec![format!("I2C env addr=0x{:02X}", model.address)];
+                let humidity = if model.supports_humidity {
+                    format!(" rh={:.2}%", model.relative_humidity_percent)
+                } else {
+                    String::new()
+                };
+                lines.push(format!(
+                    "temp={:.2}C pressure={:.2}hPa{} delay={}ms",
+                    model.temperature_c, model.pressure_hpa, humidity, model.measurement_delay_ms
+                ));
+                lines
+            }
+            Self::AmbientLightI2c(model) => vec![
+                format!("I2C light addr=0x{:02X}", model.address),
+                format!("illuminance={:.2} lux", model.illuminance_lux),
+            ],
+            Self::PowerMonitorI2c(model) => vec![
+                format!("I2C power addr=0x{:02X}", model.address),
+                format!(
+                    "bus={:.3}V shunt={:.3}mV current={:.2}mA power={:.2}mW alert={}",
+                    model.bus_voltage_v,
+                    model.shunt_voltage_mv,
+                    model.current_ma,
+                    model.power_mw,
+                    model.alert_asserted
+                ),
+            ],
+            Self::Imu6DofI2c(model) => vec![
+                format!("I2C IMU addr=0x{:02X}", model.address),
+                format!(
+                    "accel=({:.3},{:.3},{:.3})g gyro=({:.2},{:.2},{:.2})dps temp={:.2}C int={}",
+                    model.accel_x_g,
+                    model.accel_y_g,
+                    model.accel_z_g,
+                    model.gyro_x_dps,
+                    model.gyro_y_dps,
+                    model.gyro_z_dps,
+                    model.temperature_c,
+                    model.interrupt_asserted
+                ),
+            ],
+            Self::Adc4ChannelI2c(model) => vec![
+                format!("I2C ADC addr=0x{:02X}", model.address),
+                format!(
+                    "ain=({:.3},{:.3},{:.3},{:.3})V gain={:.3}V rate={}sps alert={}",
+                    model.ain0_v,
+                    model.ain1_v,
+                    model.ain2_v,
+                    model.ain3_v,
+                    model.gain_volts,
+                    model.sample_rate_sps,
+                    model.alert_asserted
+                ),
+            ],
+            Self::TofDistanceI2c(model) => vec![
+                format!("I2C ToF addr=0x{:02X}", model.address),
+                format!(
+                    "distance={}mm valid={}",
+                    model.distance_mm, model.signal_valid
+                ),
+            ],
+            Self::ThermocoupleSpi(model) => {
+                let mut lines = vec!["SPI thermocouple".to_string()];
+                let internal = if model.has_internal_temp {
+                    format!(" internal={:.2}C", model.internal_temp_c)
+                } else {
+                    String::new()
+                };
+                lines.push(format!(
+                    "temp={:.2}C{} open={} short_gnd={} short_vcc={}",
+                    model.temperature_c,
+                    internal,
+                    model.fault_open,
+                    model.fault_short_to_gnd,
+                    model.fault_short_to_vcc
+                ));
+                lines
+            }
             Self::Mcp2515(model) => vec![
                 format!("MCP2515 osc={}Hz", model.oscillator_hz),
                 format!(
@@ -150,6 +337,156 @@ impl BehaviorInstance {
                 "relative_humidity_percent" => {
                     model.relative_humidity_percent =
                         expect_f64("relative_humidity_percent", value)?;
+                    Ok(())
+                }
+                _ => Err(BehaviorError::UnknownInput(input.to_string())),
+            },
+            Self::TempHumidityI2c(model) => match input {
+                "temperature_c" => {
+                    model.temperature_c = expect_f64("temperature_c", value)?;
+                    Ok(())
+                }
+                "relative_humidity_percent" => {
+                    model.relative_humidity_percent =
+                        expect_f64("relative_humidity_percent", value)?;
+                    Ok(())
+                }
+                _ => Err(BehaviorError::UnknownInput(input.to_string())),
+            },
+            Self::EnvironmentalI2c(model) => match input {
+                "temperature_c" => {
+                    model.temperature_c = expect_f64("temperature_c", value)?;
+                    Ok(())
+                }
+                "pressure_hpa" => {
+                    model.pressure_hpa = expect_f64("pressure_hpa", value)?;
+                    Ok(())
+                }
+                "relative_humidity_percent" if model.supports_humidity => {
+                    model.relative_humidity_percent =
+                        expect_f64("relative_humidity_percent", value)?;
+                    Ok(())
+                }
+                _ => Err(BehaviorError::UnknownInput(input.to_string())),
+            },
+            Self::AmbientLightI2c(model) => match input {
+                "illuminance_lux" => {
+                    model.illuminance_lux = expect_f64("illuminance_lux", value)?;
+                    Ok(())
+                }
+                _ => Err(BehaviorError::UnknownInput(input.to_string())),
+            },
+            Self::PowerMonitorI2c(model) => match input {
+                "bus_voltage_v" => {
+                    model.bus_voltage_v = expect_f64("bus_voltage_v", value)?;
+                    Ok(())
+                }
+                "shunt_voltage_mv" => {
+                    model.shunt_voltage_mv = expect_f64("shunt_voltage_mv", value)?;
+                    Ok(())
+                }
+                "current_ma" => {
+                    model.current_ma = expect_f64("current_ma", value)?;
+                    Ok(())
+                }
+                "power_mw" => {
+                    model.power_mw = expect_f64("power_mw", value)?;
+                    Ok(())
+                }
+                "alert_asserted" => {
+                    model.alert_asserted = expect_bool("alert_asserted", value)?;
+                    Ok(())
+                }
+                _ => Err(BehaviorError::UnknownInput(input.to_string())),
+            },
+            Self::Imu6DofI2c(model) => match input {
+                "accel_x_g" => {
+                    model.accel_x_g = expect_f64("accel_x_g", value)?;
+                    Ok(())
+                }
+                "accel_y_g" => {
+                    model.accel_y_g = expect_f64("accel_y_g", value)?;
+                    Ok(())
+                }
+                "accel_z_g" => {
+                    model.accel_z_g = expect_f64("accel_z_g", value)?;
+                    Ok(())
+                }
+                "gyro_x_dps" => {
+                    model.gyro_x_dps = expect_f64("gyro_x_dps", value)?;
+                    Ok(())
+                }
+                "gyro_y_dps" => {
+                    model.gyro_y_dps = expect_f64("gyro_y_dps", value)?;
+                    Ok(())
+                }
+                "gyro_z_dps" => {
+                    model.gyro_z_dps = expect_f64("gyro_z_dps", value)?;
+                    Ok(())
+                }
+                "temperature_c" => {
+                    model.temperature_c = expect_f64("temperature_c", value)?;
+                    Ok(())
+                }
+                "interrupt_asserted" => {
+                    model.interrupt_asserted = expect_bool("interrupt_asserted", value)?;
+                    Ok(())
+                }
+                _ => Err(BehaviorError::UnknownInput(input.to_string())),
+            },
+            Self::Adc4ChannelI2c(model) => match input {
+                "ain0_v" => {
+                    model.ain0_v = expect_f64("ain0_v", value)?;
+                    Ok(())
+                }
+                "ain1_v" => {
+                    model.ain1_v = expect_f64("ain1_v", value)?;
+                    Ok(())
+                }
+                "ain2_v" => {
+                    model.ain2_v = expect_f64("ain2_v", value)?;
+                    Ok(())
+                }
+                "ain3_v" => {
+                    model.ain3_v = expect_f64("ain3_v", value)?;
+                    Ok(())
+                }
+                "alert_asserted" => {
+                    model.alert_asserted = expect_bool("alert_asserted", value)?;
+                    Ok(())
+                }
+                _ => Err(BehaviorError::UnknownInput(input.to_string())),
+            },
+            Self::TofDistanceI2c(model) => match input {
+                "distance_mm" => {
+                    model.distance_mm = expect_u32("distance_mm", value)?;
+                    Ok(())
+                }
+                "signal_valid" => {
+                    model.signal_valid = expect_bool("signal_valid", value)?;
+                    Ok(())
+                }
+                _ => Err(BehaviorError::UnknownInput(input.to_string())),
+            },
+            Self::ThermocoupleSpi(model) => match input {
+                "temperature_c" => {
+                    model.temperature_c = expect_f64("temperature_c", value)?;
+                    Ok(())
+                }
+                "internal_temp_c" if model.has_internal_temp => {
+                    model.internal_temp_c = expect_f64("internal_temp_c", value)?;
+                    Ok(())
+                }
+                "fault_open" => {
+                    model.fault_open = expect_bool("fault_open", value)?;
+                    Ok(())
+                }
+                "fault_short_to_gnd" => {
+                    model.fault_short_to_gnd = expect_bool("fault_short_to_gnd", value)?;
+                    Ok(())
+                }
+                "fault_short_to_vcc" => {
+                    model.fault_short_to_vcc = expect_bool("fault_short_to_vcc", value)?;
                     Ok(())
                 }
                 _ => Err(BehaviorError::UnknownInput(input.to_string())),
@@ -201,6 +538,76 @@ impl BehaviorInstance {
                 "address" => Ok(BehaviorValue::Integer(i64::from(model.address))),
                 _ => Err(BehaviorError::UnknownOutput(output.to_string())),
             },
+            Self::TempHumidityI2c(model) => match output {
+                "temperature_c" => Ok(BehaviorValue::Float(model.temperature_c)),
+                "relative_humidity_percent" => {
+                    Ok(BehaviorValue::Float(model.relative_humidity_percent))
+                }
+                "address" => Ok(BehaviorValue::Integer(i64::from(model.address))),
+                _ => Err(BehaviorError::UnknownOutput(output.to_string())),
+            },
+            Self::EnvironmentalI2c(model) => match output {
+                "temperature_c" => Ok(BehaviorValue::Float(model.temperature_c)),
+                "pressure_hpa" => Ok(BehaviorValue::Float(model.pressure_hpa)),
+                "relative_humidity_percent" if model.supports_humidity => {
+                    Ok(BehaviorValue::Float(model.relative_humidity_percent))
+                }
+                "address" => Ok(BehaviorValue::Integer(i64::from(model.address))),
+                _ => Err(BehaviorError::UnknownOutput(output.to_string())),
+            },
+            Self::AmbientLightI2c(model) => match output {
+                "illuminance_lux" => Ok(BehaviorValue::Float(model.illuminance_lux)),
+                "address" => Ok(BehaviorValue::Integer(i64::from(model.address))),
+                _ => Err(BehaviorError::UnknownOutput(output.to_string())),
+            },
+            Self::PowerMonitorI2c(model) => match output {
+                "bus_voltage_v" => Ok(BehaviorValue::Float(model.bus_voltage_v)),
+                "shunt_voltage_mv" => Ok(BehaviorValue::Float(model.shunt_voltage_mv)),
+                "current_ma" => Ok(BehaviorValue::Float(model.current_ma)),
+                "power_mw" => Ok(BehaviorValue::Float(model.power_mw)),
+                "alert_asserted" => Ok(BehaviorValue::Bool(model.alert_asserted)),
+                "address" => Ok(BehaviorValue::Integer(i64::from(model.address))),
+                _ => Err(BehaviorError::UnknownOutput(output.to_string())),
+            },
+            Self::Imu6DofI2c(model) => match output {
+                "accel_x_g" => Ok(BehaviorValue::Float(model.accel_x_g)),
+                "accel_y_g" => Ok(BehaviorValue::Float(model.accel_y_g)),
+                "accel_z_g" => Ok(BehaviorValue::Float(model.accel_z_g)),
+                "gyro_x_dps" => Ok(BehaviorValue::Float(model.gyro_x_dps)),
+                "gyro_y_dps" => Ok(BehaviorValue::Float(model.gyro_y_dps)),
+                "gyro_z_dps" => Ok(BehaviorValue::Float(model.gyro_z_dps)),
+                "temperature_c" => Ok(BehaviorValue::Float(model.temperature_c)),
+                "interrupt_asserted" => Ok(BehaviorValue::Bool(model.interrupt_asserted)),
+                "address" => Ok(BehaviorValue::Integer(i64::from(model.address))),
+                _ => Err(BehaviorError::UnknownOutput(output.to_string())),
+            },
+            Self::Adc4ChannelI2c(model) => match output {
+                "ain0_v" => Ok(BehaviorValue::Float(model.ain0_v)),
+                "ain1_v" => Ok(BehaviorValue::Float(model.ain1_v)),
+                "ain2_v" => Ok(BehaviorValue::Float(model.ain2_v)),
+                "ain3_v" => Ok(BehaviorValue::Float(model.ain3_v)),
+                "gain_volts" => Ok(BehaviorValue::Float(model.gain_volts)),
+                "sample_rate_sps" => Ok(BehaviorValue::Integer(i64::from(model.sample_rate_sps))),
+                "alert_asserted" => Ok(BehaviorValue::Bool(model.alert_asserted)),
+                "address" => Ok(BehaviorValue::Integer(i64::from(model.address))),
+                _ => Err(BehaviorError::UnknownOutput(output.to_string())),
+            },
+            Self::TofDistanceI2c(model) => match output {
+                "distance_mm" => Ok(BehaviorValue::Integer(i64::from(model.distance_mm))),
+                "signal_valid" => Ok(BehaviorValue::Bool(model.signal_valid)),
+                "address" => Ok(BehaviorValue::Integer(i64::from(model.address))),
+                _ => Err(BehaviorError::UnknownOutput(output.to_string())),
+            },
+            Self::ThermocoupleSpi(model) => match output {
+                "temperature_c" => Ok(BehaviorValue::Float(model.temperature_c)),
+                "internal_temp_c" if model.has_internal_temp => {
+                    Ok(BehaviorValue::Float(model.internal_temp_c))
+                }
+                "fault_open" => Ok(BehaviorValue::Bool(model.fault_open)),
+                "fault_short_to_gnd" => Ok(BehaviorValue::Bool(model.fault_short_to_gnd)),
+                "fault_short_to_vcc" => Ok(BehaviorValue::Bool(model.fault_short_to_vcc)),
+                _ => Err(BehaviorError::UnknownOutput(output.to_string())),
+            },
             Self::Mcp2515(model) => match output {
                 "interrupt_asserted" => Ok(BehaviorValue::Bool(model.interrupt_asserted)),
                 "tx_pending_frames" => {
@@ -235,37 +642,6 @@ impl PwmToVoltageBehavior {
         self.output_min_voltage
             + (self.output_max_voltage - self.output_min_voltage) * self.pwm_duty
     }
-}
-
-pub fn built_in_behavior_names() -> Vec<&'static str> {
-    vec![
-        "gy_sht31_d_behavior",
-        "lc_lm358_pwm_to_0_10v_behavior",
-        "max31865_breakout_behavior",
-        "mcp2515_tja1050_can_module_behavior",
-    ]
-}
-
-pub fn suggested_builtin_behavior_for_board_model(board_name: &str) -> Option<&'static str> {
-    match board_name {
-        "gy_sht31_d" => Some("gy_sht31_d_behavior"),
-        "lc_lm358_pwm_to_0_10v" => Some("lc_lm358_pwm_to_0_10v_behavior"),
-        "max31865_breakout" => Some("max31865_breakout_behavior"),
-        "mcp2515_tja1050_can_module" => Some("mcp2515_tja1050_can_module_behavior"),
-        _ => None,
-    }
-}
-
-pub fn load_built_in_behavior_definition(name: &str) -> Result<BehaviorDefinition, BehaviorError> {
-    let definition = match name {
-        "gy_sht31_d_behavior" => gy_sht31_d_behavior(),
-        "lc_lm358_pwm_to_0_10v_behavior" => lc_lm358_pwm_to_0_10v_behavior(),
-        "max31865_breakout_behavior" => max31865_breakout_behavior(),
-        "mcp2515_tja1050_can_module_behavior" => mcp2515_tja1050_can_module_behavior(),
-        _ => return Err(BehaviorError::UnknownBuiltInBehavior(name.to_string())),
-    };
-    definition.validate()?;
-    Ok(definition)
 }
 
 pub fn load_behavior_definition_from_reference(
@@ -308,6 +684,88 @@ pub fn instantiate_behavior(
                 50.0,
             )?,
         })),
+        BehaviorEngine::TempHumidityI2cSensor => {
+            Ok(BehaviorInstance::TempHumidityI2c(TempHumidityI2cBehavior {
+                address: expect_u8_parameter(definition, "address", 0x38)?,
+                measurement_delay_ms: expect_u64_parameter(definition, "measurement_delay_ms", 80)?,
+                temperature_c: expect_f64_parameter(definition, "temperature_c", 21.5)?,
+                relative_humidity_percent: expect_f64_parameter(
+                    definition,
+                    "relative_humidity_percent",
+                    50.0,
+                )?,
+            }))
+        }
+        BehaviorEngine::EnvironmentalI2cSensor => Ok(BehaviorInstance::EnvironmentalI2c(
+            EnvironmentalI2cBehavior {
+                address: expect_u8_parameter(definition, "address", 0x76)?,
+                measurement_delay_ms: expect_u64_parameter(definition, "measurement_delay_ms", 20)?,
+                temperature_c: expect_f64_parameter(definition, "temperature_c", 21.5)?,
+                pressure_hpa: expect_f64_parameter(definition, "pressure_hpa", 1013.25)?,
+                relative_humidity_percent: expect_f64_parameter(
+                    definition,
+                    "relative_humidity_percent",
+                    50.0,
+                )?,
+                supports_humidity: expect_bool_parameter(definition, "supports_humidity", true)?,
+            },
+        )),
+        BehaviorEngine::AmbientLightI2cSensor => {
+            Ok(BehaviorInstance::AmbientLightI2c(AmbientLightI2cBehavior {
+                address: expect_u8_parameter(definition, "address", 0x23)?,
+                illuminance_lux: expect_f64_parameter(definition, "illuminance_lux", 250.0)?,
+            }))
+        }
+        BehaviorEngine::PowerMonitorI2cSensor => {
+            Ok(BehaviorInstance::PowerMonitorI2c(PowerMonitorI2cBehavior {
+                address: expect_u8_parameter(definition, "address", 0x40)?,
+                bus_voltage_v: expect_f64_parameter(definition, "bus_voltage_v", 12.0)?,
+                shunt_voltage_mv: expect_f64_parameter(definition, "shunt_voltage_mv", 24.0)?,
+                current_ma: expect_f64_parameter(definition, "current_ma", 120.0)?,
+                power_mw: expect_f64_parameter(definition, "power_mw", 1440.0)?,
+                alert_asserted: expect_bool_parameter(definition, "alert_asserted", false)?,
+            }))
+        }
+        BehaviorEngine::Imu6DofI2cSensor => Ok(BehaviorInstance::Imu6DofI2c(Imu6DofI2cBehavior {
+            address: expect_u8_parameter(definition, "address", 0x68)?,
+            accel_x_g: expect_f64_parameter(definition, "accel_x_g", 0.0)?,
+            accel_y_g: expect_f64_parameter(definition, "accel_y_g", 0.0)?,
+            accel_z_g: expect_f64_parameter(definition, "accel_z_g", 1.0)?,
+            gyro_x_dps: expect_f64_parameter(definition, "gyro_x_dps", 0.0)?,
+            gyro_y_dps: expect_f64_parameter(definition, "gyro_y_dps", 0.0)?,
+            gyro_z_dps: expect_f64_parameter(definition, "gyro_z_dps", 0.0)?,
+            temperature_c: expect_f64_parameter(definition, "temperature_c", 24.0)?,
+            interrupt_asserted: expect_bool_parameter(definition, "interrupt_asserted", false)?,
+        })),
+        BehaviorEngine::Adc4ChannelI2c => {
+            Ok(BehaviorInstance::Adc4ChannelI2c(Adc4ChannelI2cBehavior {
+                address: expect_u8_parameter(definition, "address", 0x48)?,
+                gain_volts: expect_f64_parameter(definition, "gain_volts", 4.096)?,
+                sample_rate_sps: expect_u32_parameter(definition, "sample_rate_sps", 128)?,
+                ain0_v: expect_f64_parameter(definition, "ain0_v", 0.0)?,
+                ain1_v: expect_f64_parameter(definition, "ain1_v", 0.0)?,
+                ain2_v: expect_f64_parameter(definition, "ain2_v", 0.0)?,
+                ain3_v: expect_f64_parameter(definition, "ain3_v", 0.0)?,
+                alert_asserted: expect_bool_parameter(definition, "alert_asserted", false)?,
+            }))
+        }
+        BehaviorEngine::TofDistanceI2cSensor => {
+            Ok(BehaviorInstance::TofDistanceI2c(TofDistanceI2cBehavior {
+                address: expect_u8_parameter(definition, "address", 0x29)?,
+                distance_mm: expect_u32_parameter(definition, "distance_mm", 250)?,
+                signal_valid: expect_bool_parameter(definition, "signal_valid", true)?,
+            }))
+        }
+        BehaviorEngine::ThermocoupleSpiSensor => {
+            Ok(BehaviorInstance::ThermocoupleSpi(ThermocoupleSpiBehavior {
+                temperature_c: expect_f64_parameter(definition, "temperature_c", 25.0)?,
+                internal_temp_c: expect_f64_parameter(definition, "internal_temp_c", 23.0)?,
+                fault_open: expect_bool_parameter(definition, "fault_open", false)?,
+                fault_short_to_gnd: expect_bool_parameter(definition, "fault_short_to_gnd", false)?,
+                fault_short_to_vcc: expect_bool_parameter(definition, "fault_short_to_vcc", false)?,
+                has_internal_temp: expect_bool_parameter(definition, "has_internal_temp", true)?,
+            }))
+        }
         BehaviorEngine::Mcp2515CanModule => Ok(BehaviorInstance::Mcp2515(Mcp2515Behavior {
             oscillator_hz: expect_u32_parameter(definition, "oscillator_hz", 16_000_000)?,
             interrupt_asserted: expect_bool_parameter(definition, "interrupt_asserted", false)?,
@@ -333,119 +791,6 @@ pub fn instantiate_behavior(
     }
 }
 
-fn gy_sht31_d_behavior() -> BehaviorDefinition {
-    let mut definition =
-        BehaviorDefinition::new("gy_sht31_d_behavior", BehaviorEngine::Sht31I2cSensor);
-    definition.description =
-        Some("Behavior definition for the GY-SHT31-D breakout used on the air node.".to_string());
-    definition.ports = vec![
-        BehaviorPortBinding::new("SDA", "sda"),
-        BehaviorPortBinding::new("SCL", "scl"),
-        BehaviorPortBinding::new("VCC", "vcc"),
-        BehaviorPortBinding::new("GND", "gnd"),
-    ];
-    definition
-        .parameters
-        .insert("address".to_string(), BehaviorValue::Integer(0x44));
-    definition.parameters.insert(
-        "measurement_delay_ms".to_string(),
-        BehaviorValue::Integer(15),
-    );
-    definition
-        .parameters
-        .insert("ambient_temp_c".to_string(), BehaviorValue::Float(21.5));
-    definition.parameters.insert(
-        "relative_humidity_percent".to_string(),
-        BehaviorValue::Float(50.0),
-    );
-    definition
-}
-
-fn mcp2515_tja1050_can_module_behavior() -> BehaviorDefinition {
-    let mut definition = BehaviorDefinition::new(
-        "mcp2515_tja1050_can_module_behavior",
-        BehaviorEngine::Mcp2515CanModule,
-    );
-    definition.description =
-        Some("Behavior definition for the SPI MCP2515 + TJA1050 CAN breakout.".to_string());
-    definition.ports = vec![
-        BehaviorPortBinding::new("INT", "interrupt"),
-        BehaviorPortBinding::new("SCK", "spi_sck"),
-        BehaviorPortBinding::new("SI", "spi_mosi"),
-        BehaviorPortBinding::new("SO", "spi_miso"),
-        BehaviorPortBinding::new("CS", "spi_cs"),
-        BehaviorPortBinding::new("VCC", "vcc"),
-        BehaviorPortBinding::new("GND", "gnd"),
-        BehaviorPortBinding::new("CANH", "can_h"),
-        BehaviorPortBinding::new("CANL", "can_l"),
-    ];
-    definition.parameters.insert(
-        "oscillator_hz".to_string(),
-        BehaviorValue::Integer(16_000_000),
-    );
-    definition
-}
-
-fn max31865_breakout_behavior() -> BehaviorDefinition {
-    let mut definition = BehaviorDefinition::new(
-        "max31865_breakout_behavior",
-        BehaviorEngine::Max31865RtdFrontend,
-    );
-    definition.description =
-        Some("Behavior definition for the MAX31865 breakout driving a PT1000 probe.".to_string());
-    definition.ports = vec![
-        BehaviorPortBinding::new("CLK", "spi_sck"),
-        BehaviorPortBinding::new("SDO", "spi_miso"),
-        BehaviorPortBinding::new("SDI", "spi_mosi"),
-        BehaviorPortBinding::new("CS", "spi_cs"),
-        BehaviorPortBinding::new("VCC", "vcc"),
-        BehaviorPortBinding::new("GND", "gnd"),
-        BehaviorPortBinding::new("F+", "force_plus"),
-        BehaviorPortBinding::new("F-", "force_minus"),
-        BehaviorPortBinding::new("RTD+", "sense_plus"),
-        BehaviorPortBinding::new("RTD-", "sense_minus"),
-    ];
-    definition
-        .parameters
-        .insert("nominal_rtd_ohms".to_string(), BehaviorValue::Float(1000.0));
-    definition.parameters.insert(
-        "reference_resistor_ohms".to_string(),
-        BehaviorValue::Float(4300.0),
-    );
-    definition
-        .parameters
-        .insert("temperature_c".to_string(), BehaviorValue::Float(20.0));
-    definition
-}
-
-fn lc_lm358_pwm_to_0_10v_behavior() -> BehaviorDefinition {
-    let mut definition = BehaviorDefinition::new(
-        "lc_lm358_pwm_to_0_10v_behavior",
-        BehaviorEngine::PwmToVoltage,
-    );
-    definition.description =
-        Some("Behavior definition for the LC-LM358 PWM to 0-10V interface board.".to_string());
-    definition.ports = vec![
-        BehaviorPortBinding::new("GND", "gnd"),
-        BehaviorPortBinding::new("PWM", "pwm_input"),
-        BehaviorPortBinding::new("VOUT", "analog_output"),
-        BehaviorPortBinding::new("VCC", "vcc"),
-    ];
-    definition
-        .parameters
-        .insert("supply_voltage".to_string(), BehaviorValue::Float(12.0));
-    definition
-        .parameters
-        .insert("output_min_voltage".to_string(), BehaviorValue::Float(0.0));
-    definition
-        .parameters
-        .insert("output_max_voltage".to_string(), BehaviorValue::Float(10.0));
-    definition
-        .parameters
-        .insert("pwm_duty".to_string(), BehaviorValue::Float(0.0));
-    definition
-}
-
 fn validate_required_roles(definition: &BehaviorDefinition) -> Result<(), BehaviorError> {
     let roles = definition
         .ports
@@ -466,6 +811,31 @@ fn validate_required_roles(definition: &BehaviorDefinition) -> Result<(), Behavi
 fn required_roles(engine: BehaviorEngine) -> &'static [&'static str] {
     match engine {
         BehaviorEngine::Sht31I2cSensor => &["sda", "scl", "vcc", "gnd"],
+        BehaviorEngine::TempHumidityI2cSensor => &["sda", "scl", "vcc", "gnd"],
+        BehaviorEngine::EnvironmentalI2cSensor => &["sda", "scl", "vcc", "gnd"],
+        BehaviorEngine::AmbientLightI2cSensor => &["sda", "scl", "vcc", "gnd"],
+        BehaviorEngine::PowerMonitorI2cSensor => &[
+            "sda",
+            "scl",
+            "vcc",
+            "gnd",
+            "sense_positive",
+            "sense_negative",
+        ],
+        BehaviorEngine::Imu6DofI2cSensor => &["sda", "scl", "vcc", "gnd"],
+        BehaviorEngine::Adc4ChannelI2c => {
+            &["sda", "scl", "vcc", "gnd", "ain0", "ain1", "ain2", "ain3"]
+        }
+        BehaviorEngine::TofDistanceI2cSensor => &["sda", "scl", "vcc", "gnd"],
+        BehaviorEngine::ThermocoupleSpiSensor => &[
+            "spi_sck",
+            "spi_miso",
+            "spi_cs",
+            "vcc",
+            "gnd",
+            "thermocouple_positive",
+            "thermocouple_negative",
+        ],
         BehaviorEngine::Mcp2515CanModule => &[
             "interrupt",
             "spi_sck",
@@ -639,7 +1009,7 @@ mod tests {
     use super::{
         built_in_behavior_names, instantiate_behavior, load_behavior_definition_from_reference,
         load_built_in_behavior_definition, suggested_builtin_behavior_for_board_model,
-        BehaviorInstance,
+        BehaviorError, BehaviorInstance,
     };
 
     #[test]
@@ -651,6 +1021,16 @@ mod tests {
                 "lc_lm358_pwm_to_0_10v_behavior",
                 "max31865_breakout_behavior",
                 "mcp2515_tja1050_can_module_behavior",
+                "aht20_breakout_behavior",
+                "ads1115_breakout_behavior",
+                "bh1750_breakout_behavior",
+                "bme280_breakout_behavior",
+                "bmp280_breakout_behavior",
+                "ina219_breakout_behavior",
+                "max31855_breakout_behavior",
+                "max6675_breakout_behavior",
+                "mpu6050_breakout_behavior",
+                "vl53l0x_breakout_behavior",
             ]
         );
     }
@@ -664,6 +1044,14 @@ mod tests {
         assert_eq!(
             suggested_builtin_behavior_for_board_model("mcp2515_tja1050_can_module"),
             Some("mcp2515_tja1050_can_module_behavior")
+        );
+        assert_eq!(
+            suggested_builtin_behavior_for_board_model("bme280_breakout"),
+            Some("bme280_breakout_behavior")
+        );
+        assert_eq!(
+            suggested_builtin_behavior_for_board_model("ads1115_breakout"),
+            Some("ads1115_breakout_behavior")
         );
         assert_eq!(
             suggested_builtin_behavior_for_board_model("arduino_nano_v3"),
@@ -712,6 +1100,28 @@ mod tests {
     fn built_in_behavior_engines_are_expected() {
         let definition = load_built_in_behavior_definition("gy_sht31_d_behavior").expect("def");
         assert_eq!(definition.engine, BehaviorEngine::Sht31I2cSensor);
+    }
+
+    #[test]
+    fn bmp280_behavior_omits_humidity_output() {
+        let definition =
+            load_built_in_behavior_definition("bmp280_breakout_behavior").expect("def");
+        let instance = instantiate_behavior(&definition).expect("instance");
+        assert!(matches!(
+            instance.output("relative_humidity_percent"),
+            Err(BehaviorError::UnknownOutput(_))
+        ));
+    }
+
+    #[test]
+    fn max6675_behavior_omits_internal_temperature_output() {
+        let definition =
+            load_built_in_behavior_definition("max6675_breakout_behavior").expect("def");
+        let instance = instantiate_behavior(&definition).expect("instance");
+        assert!(matches!(
+            instance.output("internal_temp_c"),
+            Err(BehaviorError::UnknownOutput(_))
+        ));
     }
 
     #[test]

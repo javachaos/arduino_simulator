@@ -1,0 +1,22 @@
+{
+  "name": "bh1750_breakout",
+  "title": "BH1750 Ambient Light Breakout (Logical Model)",
+  "components": [
+    {
+      "template": "module",
+      "reference": "U1",
+      "value": "BH1750",
+      "footprint": "Virtual:BH1750_Breakout",
+      "signals": ["SDA", "SCL", "ADDR", "VCC", "GND"],
+      "position": { "x_mm": 24.0, "y_mm": 12.0 }
+    },
+    {
+      "template": "header",
+      "reference": "J1",
+      "value": "I2C + Power",
+      "footprint": "Virtual:Header_1x05_2.54mm",
+      "signals": ["SDA", "SCL", "ADDR", "VCC", "GND"],
+      "position": { "x_mm": 5.0, "y_mm": 5.0 }
+    }
+  ]
+}

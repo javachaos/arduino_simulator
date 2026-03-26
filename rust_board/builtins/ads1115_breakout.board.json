@@ -1,0 +1,30 @@
+{
+  "name": "ads1115_breakout",
+  "title": "ADS1115 4-Channel ADC Breakout (Logical Model)",
+  "components": [
+    {
+      "template": "module",
+      "reference": "U1",
+      "value": "ADS1115",
+      "footprint": "Virtual:ADS1115_Breakout",
+      "signals": ["SDA", "SCL", "ADDR", "ALERT", "VCC", "GND", "AIN0", "AIN1", "AIN2", "AIN3"],
+      "position": { "x_mm": 28.0, "y_mm": 16.0 }
+    },
+    {
+      "template": "header",
+      "reference": "J_CTRL",
+      "value": "I2C + Control",
+      "footprint": "Virtual:Header_1x06_2.54mm",
+      "signals": ["SDA", "SCL", "ADDR", "ALERT", "VCC", "GND"],
+      "position": { "x_mm": 5.0, "y_mm": 5.0 }
+    },
+    {
+      "template": "header",
+      "reference": "J_IN",
+      "value": "Analog Inputs",
+      "footprint": "Virtual:Header_1x04_2.54mm",
+      "signals": ["AIN0", "AIN1", "AIN2", "AIN3"],
+      "position": { "x_mm": 45.0, "y_mm": 5.0 }
+    }
+  ]
+}

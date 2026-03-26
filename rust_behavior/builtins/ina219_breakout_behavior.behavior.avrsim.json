@@ -1,0 +1,24 @@
+{
+  "kind": "behavior_definition",
+  "format_version": "0.3.0",
+  "name": "ina219_breakout_behavior",
+  "description": "Behavior definition for a common INA219 I2C current and power monitor breakout.",
+  "engine": "power_monitor_i2c_sensor",
+  "ports": [
+    { "board_port": "SDA", "role": "sda", "note": null },
+    { "board_port": "SCL", "role": "scl", "note": null },
+    { "board_port": "VCC", "role": "vcc", "note": null },
+    { "board_port": "GND", "role": "gnd", "note": null },
+    { "board_port": "VIN+", "role": "sense_positive", "note": null },
+    { "board_port": "VIN-", "role": "sense_negative", "note": null },
+    { "board_port": "ALERT", "role": "alert", "note": null }
+  ],
+  "parameters": {
+    "address": 64,
+    "bus_voltage_v": 12.0,
+    "shunt_voltage_mv": 24.0,
+    "current_ma": 120.0,
+    "power_mw": 1440.0,
+    "alert_asserted": false
+  }
+}

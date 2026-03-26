@@ -1,0 +1,57 @@
+{
+  "kind": "behavior_definition",
+  "format_version": "0.3.0",
+  "name": "mcp2515_tja1050_can_module_behavior",
+  "description": "Behavior definition for the SPI MCP2515 + TJA1050 CAN breakout.",
+  "engine": "mcp2515_can_module",
+  "ports": [
+    {
+      "board_port": "INT",
+      "role": "interrupt",
+      "note": null
+    },
+    {
+      "board_port": "SCK",
+      "role": "spi_sck",
+      "note": null
+    },
+    {
+      "board_port": "SI",
+      "role": "spi_mosi",
+      "note": null
+    },
+    {
+      "board_port": "SO",
+      "role": "spi_miso",
+      "note": null
+    },
+    {
+      "board_port": "CS",
+      "role": "spi_cs",
+      "note": null
+    },
+    {
+      "board_port": "VCC",
+      "role": "vcc",
+      "note": null
+    },
+    {
+      "board_port": "GND",
+      "role": "gnd",
+      "note": null
+    },
+    {
+      "board_port": "CANH",
+      "role": "can_h",
+      "note": null
+    },
+    {
+      "board_port": "CANL",
+      "role": "can_l",
+      "note": null
+    }
+  ],
+  "parameters": {
+    "oscillator_hz": 16000000
+  }
+}
