@@ -30,6 +30,37 @@ struct ControllerConnection {
     mode: BindingMode,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NetSuggestion {
+    net_name: String,
+    score: i32,
+    reason: &'static str,
+}
+
+impl NetSuggestion {
+    fn confidence_label(&self) -> &'static str {
+        match self.score {
+            900.. => "exact",
+            450.. => "high",
+            250.. => "medium",
+            _ => "low",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ModuleSignalSuggestion {
+    module_signal: String,
+    suggestion: NetSuggestion,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum NumericHintKind {
+    Unknown,
+    Digital,
+    Analog,
+}
+
 pub struct AvrSimGuiApp {
     controller: SimulationController,
     selected_board: HostBoard,
@@ -539,6 +570,7 @@ impl AvrSimGuiApp {
                 }
                 let mut remove_index = None;
                 for (index, module) in self.module_overlays.iter_mut().enumerate() {
+                    let suggestions = suggested_module_bindings(module, self.loaded_pcb.as_ref());
                     ui.group(|ui| {
                         ui.horizontal_wrapped(|ui| {
                             ui.label(RichText::new(&module.name).strong());
@@ -556,7 +588,11 @@ impl AvrSimGuiApp {
                             }
                         });
                         if module.bindings.is_empty() {
-                            ui.small("No PCB nets matched yet for this module.");
+                            if suggestions.is_empty() {
+                                ui.small("No PCB nets matched yet for this module.");
+                            } else {
+                                ui.small("Likely matches:");
+                            }
                         } else {
                             for binding in &module.bindings {
                                 ui.small(format!(
@@ -566,6 +602,15 @@ impl AvrSimGuiApp {
                                     binding_mode_label(binding.mode)
                                 ));
                             }
+                        }
+                        for suggestion in suggestions.iter().take(4) {
+                            ui.small(format!(
+                                "{} -> {} ({}, {})",
+                                suggestion.module_signal,
+                                suggestion.suggestion.net_name,
+                                suggestion.suggestion.confidence_label(),
+                                suggestion.suggestion.reason
+                            ));
                         }
                     });
                     ui.add_space(4.0);
@@ -581,7 +626,7 @@ impl AvrSimGuiApp {
 
         ui.add_space(8.0);
         egui::CollapsingHeader::new("Advanced Controller Wiring")
-            .default_open(false)
+            .default_open(self.loaded_pcb.is_some() && self.bindings.is_empty())
             .show(ui, |ui| {
                 self.draw_advanced_controller_binding_matrix(ui);
             });
@@ -599,6 +644,7 @@ impl AvrSimGuiApp {
             return;
         };
         let target_names = loaded_pcb.net_names.clone();
+        let available_nets = target_names.iter().cloned().collect::<BTreeSet<_>>();
         egui::ScrollArea::vertical()
             .id_salt("advanced_host_bindings_scroll")
             .max_height(320.0)
@@ -613,6 +659,7 @@ impl AvrSimGuiApp {
                         .as_ref()
                         .map(|binding| binding.mode)
                         .unwrap_or_else(|| infer_binding_mode(&signal));
+                    let suggestions = controller_signal_suggestions(&signal, &available_nets);
 
                     ui.group(|ui| {
                         ui.horizontal_wrapped(|ui| {
@@ -620,6 +667,43 @@ impl AvrSimGuiApp {
                             ui.separator();
                             ui.label(binding_mode_label(mode));
                         });
+                        if let Some(best) = suggestions.first() {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.small(format!(
+                                    "Suggested: {} ({}, {})",
+                                    best.net_name,
+                                    best.confidence_label(),
+                                    best.reason
+                                ));
+                                if selected_net != best.net_name
+                                    && ui.button("Use Suggested").clicked()
+                                {
+                                    selected_net = best.net_name.clone();
+                                }
+                            });
+                            let alternatives = suggestions
+                                .iter()
+                                .filter(|suggestion| suggestion.net_name != best.net_name)
+                                .take(2)
+                                .collect::<Vec<_>>();
+                            if !alternatives.is_empty() {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.small("Other likely nets:");
+                                    for suggestion in alternatives {
+                                        if ui
+                                            .small_button(format!(
+                                                "{} ({})",
+                                                suggestion.net_name,
+                                                suggestion.confidence_label()
+                                            ))
+                                            .clicked()
+                                        {
+                                            selected_net = suggestion.net_name.clone();
+                                        }
+                                    }
+                                });
+                            }
+                        }
                         egui::ComboBox::from_id_salt(format!("binding_{signal}"))
                             .width(250.0)
                             .selected_text(if selected_net.is_empty() {
@@ -646,13 +730,20 @@ impl AvrSimGuiApp {
                     if selected_net.trim().is_empty() {
                         self.bindings.remove(&signal);
                     } else {
+                        let note = existing.and_then(|binding| {
+                            if binding.pcb_net == selected_net {
+                                binding.note
+                            } else {
+                                None
+                            }
+                        });
                         self.bindings.insert(
                             signal.clone(),
                             SignalBinding {
                                 board_signal: signal.clone(),
                                 pcb_net: selected_net,
                                 mode,
-                                note: None,
+                                note,
                             },
                         );
                     }
@@ -664,38 +755,56 @@ impl AvrSimGuiApp {
     fn draw_controller_pin_block(&self, ui: &mut egui::Ui) {
         let pulse_time = ui.input(|input| input.time) as f32;
         let connections = self.controller_connections();
-        egui::Frame::group(ui.style()).show(ui, |ui| {
-            ui.label(RichText::new("Controller Pins").strong());
-            ui.small("Auto-wired Arduino pins on the selected CPU, with live simulator state.");
-            ui.add_space(6.0);
-            if connections.is_empty() {
-                ui.small("No controller pins are wired to the currently loaded PCB.");
-                return;
-            }
-            egui::ScrollArea::vertical()
-                .id_salt("board_view_controller_pins_scroll")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    for connection in connections {
-                        let activity = self.controller_signal_activity(&connection.controller_pin);
-                        let indicator_color = connectable_pin_indicator_color(activity, pulse_time);
-                        ui.group(|ui| {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.colored_label(indicator_color, "●");
-                                ui.monospace(&connection.controller_pin);
-                                ui.small("->");
-                                ui.label(&connection.pcb_net);
-                            });
-                            ui.small(format!("Mode: {}", binding_mode_label(connection.mode)));
-                            ui.small(format!(
-                                "Pin status: {}",
-                                self.controller_signal_status_text(&connection.controller_pin)
-                            ));
-                        });
-                        ui.add_space(4.0);
+        let title = if connections.is_empty() {
+            "Controller Pins".to_string()
+        } else {
+            format!("Controller Pins ({})", connections.len())
+        };
+        egui::CollapsingHeader::new(title)
+            .id_salt("controller_pins_section")
+            .default_open(true)
+            .show(ui, |ui| {
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.small(
+                        "Auto-wired Arduino pins on the selected CPU, with live simulator state.",
+                    );
+                    ui.add_space(6.0);
+                    if connections.is_empty() {
+                        ui.small("No controller pins are wired to the currently loaded PCB.");
+                        return;
                     }
+                    egui::ScrollArea::vertical()
+                        .id_salt("board_view_controller_pins_scroll")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            for connection in &connections {
+                                let activity =
+                                    self.controller_signal_activity(&connection.controller_pin);
+                                let indicator_color =
+                                    connectable_pin_indicator_color(activity, pulse_time);
+                                ui.group(|ui| {
+                                    ui.horizontal_wrapped(|ui| {
+                                        ui.colored_label(indicator_color, "●");
+                                        ui.monospace(&connection.controller_pin);
+                                        ui.small("->");
+                                        ui.label(&connection.pcb_net);
+                                    });
+                                    ui.small(format!(
+                                        "Mode: {}",
+                                        binding_mode_label(connection.mode)
+                                    ));
+                                    ui.small(format!(
+                                        "Pin status: {}",
+                                        self.controller_signal_status_text(
+                                            &connection.controller_pin
+                                        )
+                                    ));
+                                });
+                                ui.add_space(4.0);
+                            }
+                        });
                 });
-        });
+            });
     }
 
     fn draw_module_summary_block(&self, ui: &mut egui::Ui) {
@@ -837,17 +946,24 @@ impl AvrSimGuiApp {
             if self.bindings.contains_key(&signal) {
                 continue;
             }
-            let candidate = find_matching_pcb_net(&candidate_pcb_nets(&signal), &available);
-            let Some(net_name) = candidate else {
+            let suggestions = controller_signal_suggestions(&signal, &available);
+            if !should_auto_apply_suggestion(&suggestions) {
+                continue;
+            }
+            let Some(best) = suggestions.first() else {
                 continue;
             };
             self.bindings.insert(
                 signal.clone(),
                 SignalBinding {
                     board_signal: signal.clone(),
-                    pcb_net: net_name,
+                    pcb_net: best.net_name.clone(),
                     mode: infer_binding_mode(&signal),
-                    note: Some("Auto-bound by arduino_simulator".to_string()),
+                    note: Some(format!(
+                        "Auto-bound by arduino_simulator ({}, {})",
+                        best.confidence_label(),
+                        best.reason
+                    )),
                 },
             );
             bound += 1;
@@ -1320,28 +1436,349 @@ fn canonical_signal_name(value: &str) -> String {
     normalized.trim_matches('_').to_string()
 }
 
-fn find_matching_pcb_net(
+fn suggest_pcb_nets(
+    signal: &str,
     candidates: &[String],
     available_nets: &BTreeSet<String>,
-) -> Option<String> {
-    for candidate in candidates {
-        if let Some(exact) = available_nets.get(candidate) {
-            return Some(exact.clone());
-        }
-    }
-
-    let candidate_keys = candidates
+) -> Vec<NetSuggestion> {
+    let exact_candidates = candidates
+        .iter()
+        .map(|candidate| candidate.to_ascii_uppercase())
+        .collect::<BTreeSet<_>>();
+    let canonical_candidates = candidates
         .iter()
         .map(|candidate| canonical_signal_name(candidate))
         .collect::<BTreeSet<_>>();
+    let candidate_tokens = collect_match_tokens(candidates);
+    let candidate_numbers = collect_number_hints(signal, candidates);
+    let signal_mode = infer_binding_mode(signal);
 
-    let mut normalized_matches = available_nets
+    let mut suggestions = available_nets
         .iter()
-        .filter(|net| candidate_keys.contains(&canonical_signal_name(net)))
-        .cloned()
+        .filter_map(|net| {
+            let mut score = 0i32;
+            let mut strongest_reason = "";
+            let mut strongest_reason_score = 0i32;
+            let mut bump = |points: i32, reason: &'static str| {
+                if points <= 0 {
+                    return;
+                }
+                score += points;
+                if points > strongest_reason_score {
+                    strongest_reason_score = points;
+                    strongest_reason = reason;
+                }
+            };
+
+            let net_upper = net.to_ascii_uppercase();
+            let net_canonical = canonical_signal_name(net);
+            if exact_candidates.contains(&net_upper) {
+                bump(1200, "exact alias");
+            }
+            if canonical_candidates.contains(&net_canonical) {
+                bump(950, "normalized name");
+            }
+            if canonical_candidates.iter().any(|candidate| {
+                candidate.len() > 2
+                    && !candidate
+                        .chars()
+                        .all(|character| character.is_ascii_digit())
+                    && net_canonical.contains(candidate)
+            }) {
+                bump(180, "shared name");
+            }
+
+            let net_tokens = match_tokens(net);
+            let role_overlap = candidate_tokens
+                .iter()
+                .filter(|token| {
+                    !token.chars().all(|character| character.is_ascii_digit())
+                        && net_tokens.contains(*token)
+                })
+                .count();
+            if role_overlap > 0 {
+                bump((role_overlap.min(2) as i32) * 140, "shared signal role");
+            }
+
+            let net_numbers = extract_number_hints(net);
+            let mut best_number_points = 0i32;
+            for (candidate_number, candidate_kind) in &candidate_numbers {
+                for (net_number, net_kind) in &net_numbers {
+                    if candidate_number != net_number {
+                        continue;
+                    }
+                    let points = match (candidate_kind, net_kind) {
+                        (left, right) if left == right && *left != NumericHintKind::Unknown => 320,
+                        (NumericHintKind::Unknown, NumericHintKind::Unknown) => 220,
+                        (NumericHintKind::Unknown, _) | (_, NumericHintKind::Unknown) => 260,
+                        _ => 0,
+                    };
+                    best_number_points = best_number_points.max(points);
+                }
+            }
+            if best_number_points > 0 {
+                bump(best_number_points, "pin number");
+            }
+
+            let net_mode = infer_net_binding_mode(net);
+            if signal_mode == net_mode {
+                let points = match signal_mode {
+                    BindingMode::Power => 120,
+                    BindingMode::Bus => 100,
+                    BindingMode::Analog => 90,
+                    BindingMode::Digital => 60,
+                    BindingMode::Auto => 0,
+                };
+                bump(points, "signal class");
+            }
+
+            if score > 0 {
+                Some(NetSuggestion {
+                    net_name: net.clone(),
+                    score,
+                    reason: if strongest_reason.is_empty() {
+                        "heuristic match"
+                    } else {
+                        strongest_reason
+                    },
+                })
+            } else {
+                None
+            }
+        })
         .collect::<Vec<_>>();
-    normalized_matches.sort();
-    normalized_matches.into_iter().next()
+
+    suggestions.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.net_name.cmp(&right.net_name))
+    });
+    suggestions
+}
+
+fn controller_signal_suggestions(
+    signal: &str,
+    available_nets: &BTreeSet<String>,
+) -> Vec<NetSuggestion> {
+    suggest_pcb_nets(signal, &candidate_pcb_nets(signal), available_nets)
+}
+
+fn module_signal_suggestions(
+    model: &str,
+    signal: &str,
+    available_nets: &BTreeSet<String>,
+) -> Vec<NetSuggestion> {
+    suggest_pcb_nets(
+        signal,
+        &module_signal_aliases(model, signal),
+        available_nets,
+    )
+}
+
+fn suggested_module_bindings(
+    module: &ModuleOverlay,
+    loaded_pcb: Option<&LoadedPcb>,
+) -> Vec<ModuleSignalSuggestion> {
+    let Some(loaded_pcb) = loaded_pcb else {
+        return Vec::new();
+    };
+    let available_nets = loaded_pcb
+        .net_names
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let bound_signals = module
+        .bindings
+        .iter()
+        .map(|binding| binding.module_signal.clone())
+        .collect::<BTreeSet<_>>();
+    let mut suggestions = Vec::new();
+
+    for signal in module_signal_names(&module.model) {
+        if bound_signals.contains(&signal) {
+            continue;
+        }
+        let Some(best) = module_signal_suggestions(&module.model, &signal, &available_nets)
+            .into_iter()
+            .next()
+        else {
+            continue;
+        };
+        if best.score < 200 {
+            continue;
+        }
+        suggestions.push(ModuleSignalSuggestion {
+            module_signal: signal,
+            suggestion: best,
+        });
+    }
+
+    suggestions.sort_by(|left, right| {
+        right
+            .suggestion
+            .score
+            .cmp(&left.suggestion.score)
+            .then_with(|| left.module_signal.cmp(&right.module_signal))
+    });
+    suggestions
+}
+
+fn should_auto_apply_suggestion(suggestions: &[NetSuggestion]) -> bool {
+    let Some(best) = suggestions.first() else {
+        return false;
+    };
+    let second_score = suggestions
+        .get(1)
+        .map(|suggestion| suggestion.score)
+        .unwrap_or(0);
+    best.score >= 900
+        || (best.score >= 450 && (best.score - second_score) >= 80)
+        || (best.score >= 320 && (best.score - second_score) >= 140)
+}
+
+fn split_match_tokens(value: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut current_is_alpha: Option<bool> = None;
+
+    for character in value.chars() {
+        if character.is_ascii_alphanumeric() {
+            let is_alpha = character.is_ascii_alphabetic();
+            if current_is_alpha.is_some_and(|previous| previous != is_alpha) && !current.is_empty()
+            {
+                tokens.push(std::mem::take(&mut current));
+            }
+            current.push(character.to_ascii_uppercase());
+            current_is_alpha = Some(is_alpha);
+        } else {
+            if !current.is_empty() {
+                tokens.push(std::mem::take(&mut current));
+            }
+            current_is_alpha = None;
+        }
+    }
+
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+
+    tokens
+}
+
+fn normalize_match_token(token: &str) -> String {
+    match token {
+        "SS" => "CS".to_string(),
+        "CLK" => "SCK".to_string(),
+        "SDI" | "SI" => "MOSI".to_string(),
+        "SDO" | "SO" => "MISO".to_string(),
+        "IRQ" => "INT".to_string(),
+        "GROUND" | "GRND" | "VSS" => "GND".to_string(),
+        "VDD" => "VCC".to_string(),
+        _ => token.to_string(),
+    }
+}
+
+fn is_noise_match_token(token: &str) -> bool {
+    matches!(
+        token,
+        "D" | "A" | "GPIO" | "IO" | "PIN" | "PAD" | "NET" | "SIG" | "SIGNAL" | "PORT"
+    )
+}
+
+fn match_tokens(value: &str) -> BTreeSet<String> {
+    split_match_tokens(value)
+        .into_iter()
+        .map(|token| normalize_match_token(&token))
+        .filter(|token| !token.is_empty() && !is_noise_match_token(token))
+        .collect()
+}
+
+fn collect_match_tokens(candidates: &[String]) -> BTreeSet<String> {
+    let mut tokens = BTreeSet::new();
+    for candidate in candidates {
+        tokens.extend(match_tokens(candidate));
+    }
+    tokens
+}
+
+fn extract_number_hints(value: &str) -> Vec<(String, NumericHintKind)> {
+    let tokens = split_match_tokens(value);
+    let mut hints = Vec::new();
+    let mut seen = BTreeSet::new();
+
+    for (index, token) in tokens.iter().enumerate() {
+        if !token.chars().all(|character| character.is_ascii_digit()) {
+            continue;
+        }
+        let previous = index
+            .checked_sub(1)
+            .map(|offset| normalize_match_token(&tokens[offset]));
+        let kind = match previous.as_deref() {
+            Some("A") | Some("ADC") | Some("AN") => NumericHintKind::Analog,
+            Some("D") | Some("GPIO") | Some("IO") | Some("PIN") => NumericHintKind::Digital,
+            _ => NumericHintKind::Unknown,
+        };
+        if seen.insert((token.clone(), kind)) {
+            hints.push((token.clone(), kind));
+        }
+    }
+
+    hints
+}
+
+fn collect_number_hints(signal: &str, candidates: &[String]) -> Vec<(String, NumericHintKind)> {
+    let mut hints = extract_number_hints(signal);
+    let mut seen = hints.iter().cloned().collect::<BTreeSet<_>>();
+    for candidate in candidates {
+        for hint in extract_number_hints(candidate) {
+            if seen.insert(hint.clone()) {
+                hints.push(hint);
+            }
+        }
+    }
+    hints
+}
+
+fn infer_net_binding_mode(name: &str) -> BindingMode {
+    let upper = name.trim_start_matches('/').to_ascii_uppercase();
+    if upper == "GND" || upper.contains("GROUND") {
+        return BindingMode::Power;
+    }
+    if upper.starts_with('+')
+        || upper.contains("VCC")
+        || upper.contains("VDD")
+        || upper.contains("VIN")
+        || upper.contains("24V")
+        || upper.contains("12V")
+        || upper.contains("5V")
+        || upper.contains("3V3")
+        || upper.contains("IOREF")
+    {
+        return BindingMode::Power;
+    }
+    if upper.starts_with('A') || upper.contains("ADC") || upper.contains("_RAW") {
+        return BindingMode::Analog;
+    }
+    if upper.contains("SDA")
+        || upper.contains("SCL")
+        || upper.contains("MISO")
+        || upper.contains("MOSI")
+        || upper.contains("SCK")
+        || upper.contains("CLK")
+        || upper.contains("SPI")
+        || upper.contains("I2C")
+        || upper.contains("UART")
+        || upper.contains("CAN")
+        || upper.contains("IRQ")
+        || upper.contains("INT")
+        || upper.contains("CS")
+        || upper.ends_with("_RX")
+        || upper.ends_with("_TX")
+    {
+        return BindingMode::Bus;
+    }
+    BindingMode::Digital
 }
 
 fn available_module_models() -> Vec<&'static str> {
@@ -1510,12 +1947,25 @@ fn auto_wire_module_overlay(module: &mut ModuleOverlay, loaded_pcb: Option<&Load
 
     for signal in module_signal_names(&module.model) {
         let mode = infer_binding_mode(&signal);
-        let aliases = module_signal_aliases(&module.model, &signal);
-        let matched_net = find_matching_pcb_net(&aliases, &available_nets).or_else(|| {
-            existing_by_signal
-                .get(&signal)
-                .map(|binding| binding.pcb_net.clone())
+        let suggestions = module_signal_suggestions(&module.model, &signal, &available_nets);
+        let existing = existing_by_signal.get(&signal);
+        let auto_note = suggestions.first().and_then(|best| {
+            should_auto_apply_suggestion(&suggestions).then(|| {
+                format!(
+                    "Auto-wired by arduino_simulator ({}, {})",
+                    best.confidence_label(),
+                    best.reason
+                )
+            })
         });
+        let matched_net = auto_note
+            .as_ref()
+            .and_then(|_| {
+                suggestions
+                    .first()
+                    .map(|suggestion| suggestion.net_name.clone())
+            })
+            .or_else(|| existing.map(|binding| binding.pcb_net.clone()));
         let Some(pcb_net) = matched_net else {
             continue;
         };
@@ -1523,7 +1973,7 @@ fn auto_wire_module_overlay(module: &mut ModuleOverlay, loaded_pcb: Option<&Load
             module_signal: signal,
             pcb_net,
             mode,
-            note: Some("Auto-wired by arduino_simulator".to_string()),
+            note: auto_note.or_else(|| existing.and_then(|binding| binding.note.clone())),
         });
         wired += 1;
     }
@@ -1668,15 +2118,19 @@ fn connectable_pin_indicator_color(activity: SignalActivity, pulse_time: f32) ->
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use rust_mcu::{BoardPin, BoardPinLevel};
     use rust_project::{BindingMode, HostBoard, ModuleOverlay};
 
     use super::{
         auto_wire_module_overlay, available_module_models, candidate_pcb_nets, classify_source,
-        common_baud_rates, connectable_pin_indicator_color, default_project_name,
-        display_stem_for_path, host_signal_levels_for_snapshot, host_signal_names,
-        infer_binding_mode, module_model_title, module_signal_aliases, next_module_overlay_name,
-        sanitize_project_name, AvrSimGuiApp, ControllerConnection, SignalActivity, SourceAction,
+        common_baud_rates, connectable_pin_indicator_color, controller_signal_suggestions,
+        default_project_name, display_stem_for_path, host_signal_levels_for_snapshot,
+        host_signal_names, infer_binding_mode, module_model_title, module_signal_aliases,
+        module_signal_suggestions, next_module_overlay_name, sanitize_project_name,
+        should_auto_apply_suggestion, AvrSimGuiApp, ControllerConnection, SignalActivity,
+        SourceAction,
     };
     use crate::simulation::{SimulationSnapshot, SimulatorStatus};
 
@@ -1710,6 +2164,50 @@ mod tests {
     fn pcb_alias_candidates_cover_common_header_nets() {
         assert_eq!(candidate_pcb_nets("D27"), vec!["D27", "/27", "/*27"]);
         assert_eq!(candidate_pcb_nets("A10"), vec!["A10", "/A10"]);
+    }
+
+    #[test]
+    fn controller_suggestions_can_match_generic_gpio_nets() {
+        let available = ["GPIO27".to_string(), "GPIO28".to_string()]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let suggestions = controller_signal_suggestions("D27", &available);
+        assert_eq!(
+            suggestions
+                .first()
+                .map(|suggestion| suggestion.net_name.as_str()),
+            Some("GPIO27")
+        );
+        assert!(should_auto_apply_suggestion(&suggestions));
+    }
+
+    #[test]
+    fn controller_suggestions_can_match_generic_adc_nets() {
+        let available = ["ADC10".to_string(), "ADC11".to_string()]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let suggestions = controller_signal_suggestions("A10", &available);
+        assert_eq!(
+            suggestions
+                .first()
+                .map(|suggestion| suggestion.net_name.as_str()),
+            Some("ADC10")
+        );
+        assert!(should_auto_apply_suggestion(&suggestions));
+    }
+
+    #[test]
+    fn module_suggestions_can_match_protocol_role_names() {
+        let available = ["I2C_SDA".to_string(), "I2C_SCL".to_string()]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let suggestions = module_signal_suggestions("gy_sht31_d", "SDA", &available);
+        assert_eq!(
+            suggestions
+                .first()
+                .map(|suggestion| suggestion.net_name.as_str()),
+            Some("I2C_SDA")
+        );
     }
 
     #[test]

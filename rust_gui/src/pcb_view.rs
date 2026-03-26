@@ -625,16 +625,14 @@ mod tests {
 
     #[test]
     fn loaded_pcb_exposes_sorted_net_names() {
-        let loaded = LoadedPcb::load(&example_pcb_path("air_node.kicad_pcb"))
-            .expect("loaded pcb");
+        let loaded = LoadedPcb::load(&example_pcb_path("air_node.kicad_pcb")).expect("loaded pcb");
         assert!(!loaded.net_names.is_empty());
         assert_eq!(loaded.net_names.first().map(String::as_str), Some("+24V"));
     }
 
     #[test]
     fn net_tooltip_summary_reports_bound_signals_and_geometry_counts() {
-        let loaded = LoadedPcb::load(&example_pcb_path("air_node.kicad_pcb"))
-            .expect("loaded pcb");
+        let loaded = LoadedPcb::load(&example_pcb_path("air_node.kicad_pcb")).expect("loaded pcb");
 
         let summary = net_tooltip_summary(
             &loaded,

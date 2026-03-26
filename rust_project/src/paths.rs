@@ -25,7 +25,9 @@ pub(crate) fn prepare_document_for_save(document: &mut AvrSimDocument, document_
         AvrSimDocument::AssemblyDefinition(definition) => {
             prepare_assembly_definition_for_save(definition, &base_dir);
         }
-        AvrSimDocument::AssemblyBundle(bundle) => prepare_assembly_bundle_for_save(bundle, &base_dir),
+        AvrSimDocument::AssemblyBundle(bundle) => {
+            prepare_assembly_bundle_for_save(bundle, &base_dir)
+        }
         AvrSimDocument::BehaviorDefinition(_) => {}
     }
 }
@@ -45,7 +47,9 @@ pub(crate) fn resolve_document_after_load(document: &mut AvrSimDocument, documen
         AvrSimDocument::AssemblyDefinition(definition) => {
             resolve_assembly_definition_after_load(definition, &base_dir);
         }
-        AvrSimDocument::AssemblyBundle(bundle) => resolve_assembly_bundle_after_load(bundle, &base_dir),
+        AvrSimDocument::AssemblyBundle(bundle) => {
+            resolve_assembly_bundle_after_load(bundle, &base_dir)
+        }
         AvrSimDocument::BehaviorDefinition(_) => {}
     }
 }

@@ -263,7 +263,14 @@ impl BoardEditorState {
             .default_size([900.0, 720.0])
             .show(ctx, |ui| {
                 let bindings = Vec::new();
-                render_pcb(ui, loaded, &bindings, &[], &BTreeSet::new(), &BTreeSet::new());
+                render_pcb(
+                    ui,
+                    loaded,
+                    &bindings,
+                    &[],
+                    &BTreeSet::new(),
+                    &BTreeSet::new(),
+                );
             });
         if !open {
             self.preview_member_id = None;
@@ -2004,8 +2011,7 @@ mod tests {
     use crate::pcb_view::LoadedPcb;
 
     fn air_node_pcb_path() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../examples/pcbs/air_node.kicad_pcb")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/pcbs/air_node.kicad_pcb")
     }
 
     #[test]

@@ -686,8 +686,7 @@ mod tests {
 
     #[test]
     fn imports_air_node_layout_geometry() {
-        let layout = layout_from_kicad_pcb(example_pcb_path("air_node.kicad_pcb"))
-            .expect("layout");
+        let layout = layout_from_kicad_pcb(example_pcb_path("air_node.kicad_pcb")).expect("layout");
         assert_eq!(layout.name, "air_node");
         assert!(!layout.footprints.is_empty());
         assert!(!layout.edge_cuts.is_empty());
