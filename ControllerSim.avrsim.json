@@ -6,11 +6,10 @@
   "host_board": "mega2560_rev3",
   "firmware": {
     "kind": "ino",
-    "path": "/Users/fred/Documents/DewPoint/dewpoint_controller/dewpoint_controller.ino",
-    "compiled_hex_path": "/var/folders/kv/c3t7qb5j3s1gmz1xtw9xqz180000gn/T/avrsim-rs-dewpoint_controller-mega-1774489482338/dewpoint_controller.ino.hex"
+    "path": "./examples/ino/dewpoint_controller/dewpoint_controller.ino"
   },
   "pcb": {
-    "path": "/Users/fred/Documents/DewPoint/dewpoint_controller/pcb/mega_r3_sidecar_controller_rev_a/mega_r3_sidecar_controller_rev_a.kicad_pcb",
+    "path": "./examples/pcbs/mega_r3_sidecar_controller_rev_a.kicad_pcb",
     "board_name_hint": "mega_r3_sidecar_controller_rev_a"
   },
   "root_assembly": null,

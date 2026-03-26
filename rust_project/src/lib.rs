@@ -3,6 +3,7 @@ pub mod behavior_definition;
 pub mod definitions;
 pub mod document;
 pub mod error;
+mod paths;
 pub mod shared;
 pub mod simulation_project;
 

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::definitions::DefinitionReference;
 use crate::document::AvrSimDocument;
 use crate::error::ProjectError;
+use crate::paths::resolve_simulation_project_after_load;
 use crate::shared::{
     validate_host_board_signal_bindings, validate_module_overlays, FirmwareSource, HostBoard,
     ModuleOverlay, PcbSource, ProbeSpec, SignalBinding, StimulusSpec, PROJECT_FORMAT_VERSION,
@@ -58,8 +59,7 @@ impl SimulationProject {
     }
 
     pub fn load_json(path: &Path) -> Result<Self, ProjectError> {
-        let text = std::fs::read_to_string(path)?;
-        if let Ok(document) = serde_json::from_str::<AvrSimDocument>(&text) {
+        if let Ok(document) = AvrSimDocument::load_json(path) {
             return match document {
                 AvrSimDocument::SimulationProject(project) => Ok(project),
                 other => Err(ProjectError::UnexpectedDocumentKind(
@@ -67,7 +67,10 @@ impl SimulationProject {
                 )),
             };
         }
-        Ok(serde_json::from_str(&text)?)
+        let text = std::fs::read_to_string(path)?;
+        let mut project: Self = serde_json::from_str(&text)?;
+        resolve_simulation_project_after_load(&mut project, path);
+        Ok(project)
     }
 
     pub fn validate(&self) -> Result<(), ProjectError> {

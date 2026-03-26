@@ -7,6 +7,7 @@ use crate::assembly_bundle::AssemblyBundle;
 use crate::behavior_definition::BehaviorDefinition;
 use crate::definitions::{AssemblyDefinition, BoardDefinition, ModuleDefinition};
 use crate::error::ProjectError;
+use crate::paths::{prepare_document_for_save, resolve_document_after_load};
 use crate::simulation_project::SimulationProject;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -48,12 +49,16 @@ impl AvrSimDocument {
     }
 
     pub fn save_json(&self, path: &Path) -> Result<(), ProjectError> {
-        fs::write(path, self.to_json_pretty()?)?;
+        let mut document = self.clone();
+        prepare_document_for_save(&mut document, path);
+        fs::write(path, serde_json::to_string_pretty(&document)? + "\n")?;
         Ok(())
     }
 
     pub fn load_json(path: &Path) -> Result<Self, ProjectError> {
-        Ok(serde_json::from_str(&fs::read_to_string(path)?)?)
+        let mut document = serde_json::from_str(&fs::read_to_string(path)?)?;
+        resolve_document_after_load(&mut document, path);
+        Ok(document)
     }
 }
 
