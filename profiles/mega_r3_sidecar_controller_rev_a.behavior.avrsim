@@ -1,0 +1,342 @@
+(profile
+  (board "mega_r3_sidecar_controller_rev_a")
+  (strict yes)
+
+  (component
+    (reference "D201")
+    (behavior "usb_5v_oring_diode")
+    (footprint "Diode_SMD:D_SMA")
+    (value "SS14")
+    (pad "1" "MEGA_5V")
+    (pad "2" "+5V"))
+
+  (component
+    (reference "D202")
+    (behavior "input_reverse_protection_diode")
+    (footprint "Diode_SMD:D_SMA")
+    (value "SS34")
+    (pad "1" "FIELD_24V")
+    (pad "2" "VIN_FUSED_24V"))
+
+  (component
+    (reference "D203")
+    (behavior "input_tvs_clamp")
+    (footprint "D_SMA")
+    (value "SMAJ33A")
+    (pad "1" "FIELD_24V")
+    (pad "2" "GND"))
+
+  (component
+    (reference "D204")
+    (behavior "zone1_oring_diode")
+    (footprint "Diode_SMD:D_SMA")
+    (value "SS14")
+    (pad "1" "K1_24V")
+    (pad "2" "K1_24V_FUSED"))
+
+  (component
+    (reference "D205")
+    (behavior "zone2_oring_diode")
+    (footprint "Diode_SMD:D_SMA")
+    (value "SS14")
+    (pad "1" "K2_24V")
+    (pad "2" "K2_24V_FUSED"))
+
+  (component
+    (reference "D206")
+    (behavior "zone3_oring_diode")
+    (footprint "Diode_SMD:D_SMA")
+    (value "SS14")
+    (pad "1" "K3_24V")
+    (pad "2" "K3_24V_FUSED"))
+
+  (component
+    (reference "D207")
+    (behavior "zone4_oring_diode")
+    (footprint "Diode_SMD:D_SMA")
+    (value "SS14")
+    (pad "1" "K4_24V")
+    (pad "2" "K4_24V_FUSED"))
+
+  (component
+    (reference "D208")
+    (behavior "actuator_oring_diode")
+    (footprint "Diode_SMD:D_SMA")
+    (value "SS14")
+    (pad "1" "K5_24V")
+    (pad "2" "K5_24V_FUSED"))
+
+  (component
+    (reference "F201")
+    (behavior "input_resettable_fuse")
+    (footprint "Fuse_1812_4532Metric")
+    (value "PTC 1A")
+    (pad "1" "VIN_FUSED_24V")
+    (pad "2" "VIN_RAW_24V"))
+
+  (component
+    (reference "F202")
+    (behavior "zone1_resettable_fuse")
+    (footprint "Fuse_1812_4532Metric")
+    (value "PTC 1A")
+    (pad "1" "FIELD_24V")
+    (pad "2" "K1_24V_FUSED"))
+
+  (component
+    (reference "F203")
+    (behavior "zone2_resettable_fuse")
+    (footprint "Fuse_1812_4532Metric")
+    (value "PTC 1A")
+    (pad "1" "FIELD_24V")
+    (pad "2" "K2_24V_FUSED"))
+
+  (component
+    (reference "F204")
+    (behavior "zone3_resettable_fuse")
+    (footprint "Fuse_1812_4532Metric")
+    (value "PTC 1A")
+    (pad "1" "FIELD_24V")
+    (pad "2" "K3_24V_FUSED"))
+
+  (component
+    (reference "F205")
+    (behavior "zone4_resettable_fuse")
+    (footprint "Fuse_1812_4532Metric")
+    (value "PTC 1A")
+    (pad "1" "FIELD_24V")
+    (pad "2" "K4_24V_FUSED"))
+
+  (component
+    (reference "F206")
+    (behavior "actuator_resettable_fuse")
+    (footprint "Fuse_1812_4532Metric")
+    (value "PTC 1A")
+    (pad "1" "FIELD_24V")
+    (pad "2" "K5_24V_FUSED"))
+
+  (component
+    (reference "J101")
+    (behavior "mcp2515_controller_socket")
+    (footprint "PinSocket_1x07_P2.54mm_Vertical")
+    (value "MCP2515 CTRL")
+    (pad "1" "/28")
+    (pad "2" "/*52")
+    (pad "3" "/51")
+    (pad "4" "/50")
+    (pad "5" "/27")
+    (pad "6" "GND")
+    (pad "7" "+5V"))
+
+  (component
+    (reference "J102")
+    (behavior "max31865_socket")
+    (footprint "PinSocket_1x06_P2.54mm_Vertical")
+    (value "MAX31865")
+    (pad "1" "/*52")
+    (pad "2" "/50")
+    (pad "3" "/51")
+    (pad "4" "/26")
+    (pad "5" "+5V")
+    (pad "6" "GND"))
+
+  (component
+    (reference "J103")
+    (behavior "can_breakout_header")
+    (footprint "Connector_JST:JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical")
+    (value "CAN BUS")
+    (pad "1" "CANH")
+    (pad "2" "CANL")
+    (pad "3" "GND"))
+
+  (component
+    (reference "J104")
+    (behavior "actuator_command_input")
+    (footprint "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical")
+    (value "ACT CMD")
+    (pad "1" "ACT_Y_CMD")
+    (pad "2" "GND"))
+
+  (component
+    (reference "J105")
+    (behavior "cooling_call_input")
+    (footprint "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical")
+    (value "COOL CALL")
+    (pad "1" "/24")
+    (pad "2" "GND"))
+
+  (component
+    (reference "J106")
+    (behavior "status_led_header")
+    (footprint "PinHeader_1x05_P2.54mm_Vertical")
+    (value "LED HARNESS")
+    (pad "1" "/33")
+    (pad "2" "/32")
+    (pad "3" "/31")
+    (pad "4" "/30")
+    (pad "5" "GND"))
+
+  (component
+    (reference "J107")
+    (behavior "raw_pwm_output")
+    (footprint "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical")
+    (value "PWM RAW")
+    (pad "1" "/*44")
+    (pad "2" "GND"))
+
+  (component
+    (reference "J109")
+    (behavior "mcp2515_can_pair")
+    (footprint "PinSocket_1x02_P2.54mm_Vertical")
+    (value "MCP2515 H/L")
+    (pad "1" "CANH")
+    (pad "2" "CANL"))
+
+  (component
+    (reference "J111")
+    (behavior "field_power_input")
+    (footprint "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical")
+    (value "24V IN")
+    (pad "1" "VIN_RAW_24V")
+    (pad "2" "GND"))
+
+  (component
+    (reference "K1")
+    (behavior "air_node_port")
+    (footprint "Connector_RJ:RJ45_RCH_RC01937")
+    (value "AIR Z1")
+    (pad "1" "CANH")
+    (pad "2" "CANL")
+    (pad "7" "K1_24V")
+    (pad "8" "GND"))
+
+  (component
+    (reference "K2")
+    (behavior "air_node_port")
+    (footprint "Connector_RJ:RJ45_RCH_RC01937")
+    (value "AIR Z2")
+    (pad "1" "CANH")
+    (pad "2" "CANL")
+    (pad "7" "K2_24V")
+    (pad "8" "GND"))
+
+  (component
+    (reference "K3")
+    (behavior "air_node_port")
+    (footprint "Connector_RJ:RJ45_RCH_RC01937")
+    (value "AIR Z3")
+    (pad "1" "CANH")
+    (pad "2" "CANL")
+    (pad "7" "K3_24V")
+    (pad "8" "GND"))
+
+  (component
+    (reference "K4")
+    (behavior "air_node_port")
+    (footprint "Connector_RJ:RJ45_RCH_RC01937")
+    (value "AIR SPARE")
+    (pad "1" "CANH")
+    (pad "2" "CANL")
+    (pad "7" "K4_24V")
+    (pad "8" "GND"))
+
+  (component
+    (reference "K5")
+    (behavior "actuator_port")
+    (footprint "Connector_RJ:RJ45_RCH_RC01937")
+    (value "ACTUATOR")
+    (pad "1" "ACT_Y_CMD")
+    (pad "2" "GND")
+    (pad "3" "/ACT_U_RAW")
+    (pad "4" "GND")
+    (pad "7" "K5_24V")
+    (pad "8" "GND"))
+
+  (component
+    (reference "P_AUX")
+    (behavior "mega_aux_header")
+    (footprint "Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical")
+    (value "MEGA A8-A15")
+    (pad "1" "/A8")
+    (pad "2" "/A9")
+    (pad "3" "/A10")
+    (pad "4" "/A11")
+    (pad "5" "/A12")
+    (pad "6" "/A13")
+    (pad "7" "/A14")
+    (pad "8" "/A15"))
+
+  (component
+    (reference "P_DIG")
+    (behavior "mega_digital_header")
+    (footprint "Connector_PinHeader_2.54mm:PinHeader_2x18_P2.54mm_Vertical")
+    (value "MEGA D22-D53")
+    (pad "1" "GND")
+    (pad "2" "GND")
+    (pad "3" "/*52")
+    (pad "4" "/53")
+    (pad "5" "/50")
+    (pad "6" "/51")
+    (pad "7" "/48")
+    (pad "8" "/49")
+    (pad "9" "/*46")
+    (pad "10" "/47")
+    (pad "11" "/*44")
+    (pad "12" "/*45")
+    (pad "13" "/42")
+    (pad "14" "/43")
+    (pad "15" "/40")
+    (pad "16" "/41")
+    (pad "17" "/38")
+    (pad "18" "/39")
+    (pad "19" "/36")
+    (pad "20" "/37")
+    (pad "21" "/34")
+    (pad "22" "/35")
+    (pad "23" "/32")
+    (pad "24" "/33")
+    (pad "25" "/30")
+    (pad "26" "/31")
+    (pad "27" "/28")
+    (pad "28" "/29")
+    (pad "29" "/26")
+    (pad "30" "/27")
+    (pad "31" "/24")
+    (pad "32" "/25")
+    (pad "33" "/22")
+    (pad "34" "/23")
+    (pad "35" "MEGA_5V")
+    (pad "36" "MEGA_5V"))
+
+  (component
+    (reference "R101")
+    (behavior "actuator_feedback_divider_top")
+    (footprint "R_Axial_DIN0204_L3.6mm_D1.6mm_P7.62mm_Horizontal")
+    (value "10k")
+    (pad "1" "/ACT_U_RAW")
+    (pad "2" "/A10"))
+
+  (component
+    (reference "R102")
+    (behavior "actuator_feedback_divider_bottom")
+    (footprint "R_Axial_DIN0204_L3.6mm_D1.6mm_P7.62mm_Horizontal")
+    (value "10k")
+    (pad "1" "/A10")
+    (pad "2" "GND"))
+
+  (component
+    (reference "SJ201")
+    (behavior "usb_power_bypass_link")
+    (footprint "SolderJumper-2_P1.3mm_Open_Pad1.0x1.5mm")
+    (value "USB BYPASS")
+    (pad "1" "MEGA_5V")
+    (pad "2" "+5V"))
+
+  (component
+    (reference "U201")
+    (behavior "buck_regulator_module")
+    (footprint "DewPoint:Regulator_Module_12.3x17.6mm")
+    (value "5V REG MOD")
+    (pad "1" "FIELD_24V")
+    (pad "2" "GND")
+    (pad "3" "+5V")
+    (pad "4" "GND")))

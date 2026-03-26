@@ -1,0 +1,10 @@
+[package]
+name = "rust_board"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Native board DSL and built-in logical board models for avrsim"
+
+[lib]
+path = "src/lib.rs"

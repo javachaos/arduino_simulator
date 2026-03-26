@@ -1,0 +1,9 @@
+[workspace]
+members = ["rust_cpu", "rust_mcu", "rust_runtime", "rust_gui", "rust_board", "rust_project", "rust_behavior"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Alfred Laderoute <alfred_e@outlook.com>"]

@@ -1,0 +1,14 @@
+[package]
+name = "rust_mcu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Side-by-side ATmega MMIO/runtime rewrite for avrsim"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+rust_cpu = { path = "../rust_cpu" }
+

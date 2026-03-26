@@ -1,0 +1,27 @@
+[package]
+name = "rust_gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Native Rust GUI for avrsim"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "avrsim-gui"
+path = "src/main.rs"
+
+[dependencies]
+eframe = "0.31"
+rfd = "0.15"
+rust_board = { path = "../rust_board" }
+rust_behavior = { path = "../rust_behavior" }
+rust_cpu = { path = "../rust_cpu" }
+rust_mcu = { path = "../rust_mcu" }
+rust_project = { path = "../rust_project" }
+rust_runtime = { path = "../rust_runtime" }
+
+[dev-dependencies]
+tempfile = "3"

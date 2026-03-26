@@ -1,0 +1,313 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dewpoint.local/avrsim/board.schema.json",
+  "title": "avrsim board DSL",
+  "type": "object",
+  "required": [
+    "dsl_version",
+    "kind",
+    "name",
+    "source_format",
+    "source_path",
+    "components",
+    "nets",
+    "stats"
+  ],
+  "properties": {
+    "dsl_version": {
+      "type": "string"
+    },
+    "kind": {
+      "const": "avrsim.board"
+    },
+    "name": {
+      "type": "string"
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_format": {
+      "const": "kicad_pcb"
+    },
+    "source_path": {
+      "type": "string"
+    },
+    "generator": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "generator_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "board_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "paper": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/component"
+      }
+    },
+    "nets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/net"
+      }
+    },
+    "stats": {
+      "type": "object",
+      "required": [
+        "component_count",
+        "net_count",
+        "pad_count"
+      ],
+      "properties": {
+        "component_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "net_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pad_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "position": {
+      "type": "object",
+      "required": [
+        "x_mm",
+        "y_mm"
+      ],
+      "properties": {
+        "x_mm": {
+          "type": "number"
+        },
+        "y_mm": {
+          "type": "number"
+        },
+        "rotation_deg": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "pad": {
+      "type": "object",
+      "required": [
+        "number",
+        "pad_type",
+        "shape",
+        "layers"
+      ],
+      "properties": {
+        "number": {
+          "type": "string"
+        },
+        "pad_type": {
+          "type": "string"
+        },
+        "shape": {
+          "type": "string"
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "net_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "net_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/position"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size_mm": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "drill_mm": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1,
+          "maxItems": 3
+        },
+        "uuid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "component": {
+      "type": "object",
+      "required": [
+        "reference",
+        "kind",
+        "footprint",
+        "layer",
+        "pads",
+        "properties"
+      ],
+      "properties": {
+        "reference": {
+          "type": "string"
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "footprint": {
+          "type": "string"
+        },
+        "layer": {
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/position"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "uuid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "pads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pad"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "connection": {
+      "type": "object",
+      "required": [
+        "component",
+        "pad"
+      ],
+      "properties": {
+        "component": {
+          "type": "string"
+        },
+        "component_kind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pad": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "net": {
+      "type": "object",
+      "required": [
+        "name",
+        "connections"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "connections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/connection"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

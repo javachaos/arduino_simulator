@@ -1,0 +1,13 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+target/
+
+core/
+build.options.json
+compile_commands.json
+includes.cache
+
+*.gcov
+*.rpt

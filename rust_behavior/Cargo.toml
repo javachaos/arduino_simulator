@@ -1,0 +1,13 @@
+[package]
+name = "rust_behavior"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Declarative board-behavior definitions and runtime models for avrsim"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+rust_project = { path = "../rust_project" }

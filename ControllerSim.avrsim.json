@@ -1,0 +1,419 @@
+{
+  "kind": "simulation_project",
+  "format_version": "0.3.0",
+  "name": "ControllerSim",
+  "description": null,
+  "host_board": "mega2560_rev3",
+  "firmware": {
+    "kind": "ino",
+    "path": "/Users/fred/Documents/DewPoint/dewpoint_controller/dewpoint_controller.ino",
+    "compiled_hex_path": "/var/folders/kv/c3t7qb5j3s1gmz1xtw9xqz180000gn/T/avrsim-rs-dewpoint_controller-mega-1774489482338/dewpoint_controller.ino.hex"
+  },
+  "pcb": {
+    "path": "/Users/fred/Documents/DewPoint/dewpoint_controller/pcb/mega_r3_sidecar_controller_rev_a/mega_r3_sidecar_controller_rev_a.kicad_pcb",
+    "board_name_hint": "mega_r3_sidecar_controller_rev_a"
+  },
+  "root_assembly": null,
+  "module_overlays": [
+    {
+      "name": "gy_sht31_d_1",
+      "model": "gy_sht31_d",
+      "bindings": [
+        {
+          "module_signal": "GND",
+          "pcb_net": "GND",
+          "mode": "power",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "VCC",
+          "pcb_net": "+5V",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        }
+      ]
+    },
+    {
+      "name": "lc_lm358_pwm_to_0_10v_1",
+      "model": "lc_lm358_pwm_to_0_10v",
+      "bindings": [
+        {
+          "module_signal": "GND",
+          "pcb_net": "GND",
+          "mode": "power",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "PWM",
+          "pcb_net": "/*44",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "VCC",
+          "pcb_net": "+5V",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        }
+      ]
+    },
+    {
+      "name": "max31865_breakout_1",
+      "model": "max31865_breakout",
+      "bindings": [
+        {
+          "module_signal": "CLK",
+          "pcb_net": "/*52",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "CS",
+          "pcb_net": "/53",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "GND",
+          "pcb_net": "GND",
+          "mode": "power",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "SDI",
+          "pcb_net": "/51",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "SDO",
+          "pcb_net": "/50",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "VCC",
+          "pcb_net": "+5V",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        }
+      ]
+    },
+    {
+      "name": "mcp2515_tja1050_can_1",
+      "model": "mcp2515_tja1050_can_module",
+      "bindings": [
+        {
+          "module_signal": "CANH",
+          "pcb_net": "CANH",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "CANL",
+          "pcb_net": "CANL",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "CS",
+          "pcb_net": "/53",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "GND",
+          "pcb_net": "GND",
+          "mode": "power",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "INT",
+          "pcb_net": "/28",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "SCK",
+          "pcb_net": "/*52",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "SI",
+          "pcb_net": "/51",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "SO",
+          "pcb_net": "/50",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        },
+        {
+          "module_signal": "VCC",
+          "pcb_net": "+5V",
+          "mode": "digital",
+          "note": "Auto-wired by avrsim-rs"
+        }
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "board_signal": "+5V",
+      "pcb_net": "+5V",
+      "mode": "power",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "A10",
+      "pcb_net": "/A10",
+      "mode": "analog",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "A11",
+      "pcb_net": "/A11",
+      "mode": "analog",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "A12",
+      "pcb_net": "/A12",
+      "mode": "analog",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "A13",
+      "pcb_net": "/A13",
+      "mode": "analog",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "A14",
+      "pcb_net": "/A14",
+      "mode": "analog",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "A15",
+      "pcb_net": "/A15",
+      "mode": "analog",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "A8",
+      "pcb_net": "/A8",
+      "mode": "analog",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "A9",
+      "pcb_net": "/A9",
+      "mode": "analog",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D22",
+      "pcb_net": "/22",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D23",
+      "pcb_net": "/23",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D24",
+      "pcb_net": "/24",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D25",
+      "pcb_net": "/25",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D26",
+      "pcb_net": "/26",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D27",
+      "pcb_net": "/27",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D28",
+      "pcb_net": "/28",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D29",
+      "pcb_net": "/29",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D30",
+      "pcb_net": "/30",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D31",
+      "pcb_net": "/31",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D32",
+      "pcb_net": "/32",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D33",
+      "pcb_net": "/33",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D34",
+      "pcb_net": "/34",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D35",
+      "pcb_net": "/35",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D36",
+      "pcb_net": "/36",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D37",
+      "pcb_net": "/37",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D38",
+      "pcb_net": "/38",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D39",
+      "pcb_net": "/39",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D40",
+      "pcb_net": "/40",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D41",
+      "pcb_net": "/41",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D42",
+      "pcb_net": "/42",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D43",
+      "pcb_net": "/43",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D44_PWM",
+      "pcb_net": "/*44",
+      "mode": "analog",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D45_PWM",
+      "pcb_net": "/*45",
+      "mode": "analog",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D46_PWM",
+      "pcb_net": "/*46",
+      "mode": "analog",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D47",
+      "pcb_net": "/47",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D48",
+      "pcb_net": "/48",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D49",
+      "pcb_net": "/49",
+      "mode": "digital",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D50_MISO",
+      "pcb_net": "/50",
+      "mode": "bus",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D51_MOSI",
+      "pcb_net": "/51",
+      "mode": "bus",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D52_SCK",
+      "pcb_net": "/*52",
+      "mode": "bus",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "D53_SS",
+      "pcb_net": "/53",
+      "mode": "bus",
+      "note": "Auto-bound by avrsim-rs"
+    },
+    {
+      "board_signal": "GND",
+      "pcb_net": "GND",
+      "mode": "power",
+      "note": "Auto-bound by avrsim-rs"
+    }
+  ],
+  "probes": [],
+  "stimuli": []
+}
