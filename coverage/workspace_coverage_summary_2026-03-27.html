@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Arduino Simulator Coverage Summary</title>
+<style>
+  :root {
+    --bg: #f7f4ee;
+    --paper: #fffdf8;
+    --ink: #1f2430;
+    --muted: #5b6475;
+    --accent: #0f766e;
+    --accent-soft: #dff5f2;
+    --warn: #b45309;
+    --danger: #b42318;
+    --line: #ddd6c8;
+  }
+  body {
+    margin: 0;
+    padding: 32px;
+    background: linear-gradient(180deg, #f4efe6 0%, #f8f6f0 100%);
+    color: var(--ink);
+    font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    line-height: 1.45;
+  }
+  .page {
+    max-width: 1080px;
+    margin: 0 auto;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    box-shadow: 0 10px 40px rgba(31, 36, 48, 0.08);
+    padding: 36px 40px 44px;
+  }
+  h1, h2, h3 {
+    margin: 0 0 12px;
+    line-height: 1.15;
+  }
+  h1 {
+    font-size: 30px;
+    letter-spacing: -0.02em;
+  }
+  h2 {
+    margin-top: 28px;
+    font-size: 20px;
+    border-top: 2px solid var(--line);
+    padding-top: 18px;
+  }
+  p, li {
+    font-size: 13px;
+  }
+  .lede {
+    color: var(--muted);
+    max-width: 860px;
+    margin-bottom: 20px;
+  }
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin: 22px 0 8px;
+  }
+  .card {
+    border: 1px solid var(--line);
+    background: #fff;
+    padding: 14px 16px;
+    border-radius: 10px;
+  }
+  .card .label {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+  }
+  .card .value {
+    font-size: 24px;
+    font-weight: 700;
+  }
+  .small {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .summary-box {
+    border-left: 4px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 14px 16px;
+    margin-top: 16px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+    font-size: 12px;
+  }
+  th, td {
+    border-bottom: 1px solid var(--line);
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    background: #fcfaf4;
+  }
+  td.num, th.num {
+    text-align: right;
+    white-space: nowrap;
+  }
+  .pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .p-high { background: #e7f8ee; color: #0f6b37; }
+  .p-mid { background: #fff2d8; color: #8a5a00; }
+  .p-low { background: #fde8e8; color: #9f1c1c; }
+  .mono { font-family: Menlo, Monaco, Consolas, monospace; font-size: 11px; }
+  ul {
+    margin: 8px 0 0 18px;
+    padding: 0;
+  }
+  .footer {
+    margin-top: 22px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Arduino Simulator Coverage Summary</h1>
+  <p class="lede">
+    Workspace source coverage summary generated on March 27, 2026 for <span class="mono">/Users/fred/Documents/arduino_simulator</span>.
+    The run used instrumented Rust tests across the full workspace. Percentages below are for project source files under <span class="mono">*/src/*.rs</span>, not test files.
+  </p>
+
+  <div class="meta">
+    <div class="card">
+      <span class="label">Source Files</span>
+      <span class="value">36</span>
+      <span class="small">Project files included in the rollup</span>
+    </div>
+    <div class="card">
+      <span class="label">Workspace Tests</span>
+      <span class="value">171</span>
+      <span class="small">All passing in the instrumented run</span>
+    </div>
+    <div class="card">
+      <span class="label">Coverage Command</span>
+      <span class="value mono" style="font-size:13px">cargo test --workspace</span>
+      <span class="small">With <span class="mono">-Cinstrument-coverage</span></span>
+    </div>
+    <div class="card">
+      <span class="label">Artifacts</span>
+      <span class="value mono" style="font-size:13px">coverage/</span>
+      <span class="small">PDF, HTML, and TSV included</span>
+    </div>
+  </div>
+
+  <h2>Topline</h2>
+  <div class="summary-box">
+    <strong>Overall source line coverage is 60.53%</strong> with <span class="mono">8,775 / 14,496</span> lines covered.
+    Function coverage is <span class="mono">66.21%</span> and region coverage is <span class="mono">60.07%</span>.
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th class="num">Covered</th>
+        <th class="num">Total</th>
+        <th class="num">Percent</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Lines</td><td class="num">8,775</td><td class="num">14,496</td><td class="num">60.53%</td></tr>
+      <tr><td>Functions</td><td class="num">817</td><td class="num">1,234</td><td class="num">66.21%</td></tr>
+      <tr><td>Regions</td><td class="num">12,937</td><td class="num">21,537</td><td class="num">60.07%</td></tr>
+    </tbody>
+  </table>
+
+  <h2>What Stands Out</h2>
+  <ul>
+    <li><strong>Best-covered crates:</strong> <span class="mono">rust_board</span> at 94.28% line coverage, <span class="mono">rust_mcu</span> at 85.06%, and <span class="mono">rust_project</span> at 80.20%.</li>
+    <li><strong>Middle of the pack:</strong> <span class="mono">rust_cpu</span> is at 69.74%, which is much healthier than before but still has one very large hotspot in <span class="mono">cpu.rs</span>.</li>
+    <li><strong>Main drag on the workspace total:</strong> <span class="mono">rust_gui</span> and <span class="mono">rust_runtime</span> have the most uncovered source lines in absolute terms.</li>
+    <li><strong>Most concerning single file:</strong> <span class="mono">rust_project/src/error.rs</span> is at 0.00%, which usually means an entire error/reporting surface is not exercised in tests yet.</li>
+  </ul>
+
+  <h2>Coverage By Crate</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Crate</th>
+        <th class="num">Line %</th>
+        <th class="num">Covered / Total Lines</th>
+        <th class="num">Function %</th>
+        <th class="num">Covered / Total Functions</th>
+        <th class="num">Region %</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td><span class="mono">rust_board</span></td><td class="num">94.28%</td><td class="num">1,566 / 1,661</td><td class="num">94.08%</td><td class="num">159 / 169</td><td class="num">93.49%</td></tr>
+      <tr><td><span class="mono">rust_mcu</span></td><td class="num">85.06%</td><td class="num">1,002 / 1,178</td><td class="num">82.05%</td><td class="num">64 / 78</td><td class="num">83.66%</td></tr>
+      <tr><td><span class="mono">rust_project</span></td><td class="num">80.20%</td><td class="num">1,207 / 1,505</td><td class="num">86.30%</td><td class="num">126 / 146</td><td class="num">78.87%</td></tr>
+      <tr><td><span class="mono">rust_cpu</span></td><td class="num">69.74%</td><td class="num">1,302 / 1,867</td><td class="num">98.44%</td><td class="num">63 / 64</td><td class="num">68.99%</td></tr>
+      <tr><td><span class="mono">rust_behavior</span></td><td class="num">57.14%</td><td class="num">412 / 721</td><td class="num">75.00%</td><td class="num">36 / 48</td><td class="num">52.27%</td></tr>
+      <tr><td><span class="mono">rust_runtime</span></td><td class="num">45.60%</td><td class="num">528 / 1,158</td><td class="num">48.72%</td><td class="num">57 / 117</td><td class="num">46.91%</td></tr>
+      <tr><td><span class="mono">rust_gui</span></td><td class="num">43.05%</td><td class="num">2,758 / 6,406</td><td class="num">50.98%</td><td class="num">312 / 612</td><td class="num">43.75%</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Biggest Hotspots By Missed Lines</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>File</th>
+        <th class="num">Coverage</th>
+        <th class="num">Missed Lines</th>
+        <th class="num">Covered / Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">rust_gui/src/app.rs</td><td class="num">45.52%</td><td class="num">1,460</td><td class="num">1,220 / 2,680</td></tr>
+      <tr><td class="mono">rust_gui/src/board_editor.rs</td><td class="num">39.97%</td><td class="num">1,218</td><td class="num">811 / 2,029</td></tr>
+      <tr><td class="mono">rust_cpu/src/cpu.rs</td><td class="num">67.21%</td><td class="num">565</td><td class="num">1,158 / 1,723</td></tr>
+      <tr><td class="mono">rust_runtime/src/tui.rs</td><td class="num">26.78%</td><td class="num">462</td><td class="num">169 / 631</td></tr>
+      <tr><td class="mono">rust_gui/src/simulation.rs</td><td class="num">21.65%</td><td class="num">445</td><td class="num">123 / 568</td></tr>
+      <tr><td class="mono">rust_gui/src/pcb_view.rs</td><td class="num">53.49%</td><td class="num">440</td><td class="num">506 / 946</td></tr>
+      <tr><td class="mono">rust_behavior/src/lib.rs</td><td class="num">56.30%</td><td class="num">298</td><td class="num">384 / 682</td></tr>
+      <tr><td class="mono">rust_runtime/src/cli.rs</td><td class="num">68.99%</td><td class="num">89</td><td class="num">198 / 287</td></tr>
+      <tr><td class="mono">rust_gui/src/arduino.rs</td><td class="num">53.55%</td><td class="num">85</td><td class="num">98 / 183</td></tr>
+      <tr><td class="mono">rust_mcu/src/atmega2560.rs</td><td class="num">84.35%</td><td class="num">82</td><td class="num">442 / 524</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Lowest-Coverage Files</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>File</th>
+        <th class="num">Coverage</th>
+        <th class="num">Missed Lines</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">rust_project/src/error.rs</td><td class="num">0.00%</td><td class="num">53</td></tr>
+      <tr><td class="mono">rust_gui/src/simulation.rs</td><td class="num">21.65%</td><td class="num">445</td></tr>
+      <tr><td class="mono">rust_runtime/src/tui.rs</td><td class="num">26.78%</td><td class="num">462</td></tr>
+      <tr><td class="mono">rust_gui/src/board_editor.rs</td><td class="num">39.97%</td><td class="num">1,218</td></tr>
+      <tr><td class="mono">rust_runtime/src/firmware.rs</td><td class="num">42.59%</td><td class="num">62</td></tr>
+      <tr><td class="mono">rust_gui/src/app.rs</td><td class="num">45.52%</td><td class="num">1,460</td></tr>
+      <tr><td class="mono">rust_gui/src/pcb_view.rs</td><td class="num">53.49%</td><td class="num">440</td></tr>
+      <tr><td class="mono">rust_gui/src/arduino.rs</td><td class="num">53.55%</td><td class="num">85</td></tr>
+      <tr><td class="mono">rust_behavior/src/lib.rs</td><td class="num">56.30%</td><td class="num">298</td></tr>
+      <tr><td class="mono">rust_project/src/shared.rs</td><td class="num">65.26%</td><td class="num">33</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Strongest-Coverage Files</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>File</th>
+        <th class="num">Coverage</th>
+        <th class="num">Missed Lines</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">rust_board/src/layout.rs</td><td class="num">100.00%</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_cpu/src/bus.rs</td><td class="num">100.00%</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_cpu/src/config.rs</td><td class="num">100.00%</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_cpu/src/error.rs</td><td class="num">100.00%</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_cpu/src/lib.rs</td><td class="num">100.00%</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_mcu/src/lib.rs</td><td class="num">100.00%</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_runtime/src/main.rs</td><td class="num">100.00%</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_board/src/kicad_pcb.rs</td><td class="num">96.39%</td><td class="num">10</td></tr>
+      <tr><td class="mono">rust_board/src/models.rs</td><td class="num">96.27%</td><td class="num">15</td></tr>
+      <tr><td class="mono">rust_board/src/kicad_layout.rs</td><td class="num">94.81%</td><td class="num">32</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Recommended Next Targets</h2>
+  <ul>
+    <li><strong>GUI depth:</strong> If the goal is the fastest improvement to workspace line coverage, the best return is in <span class="mono">rust_gui/src/app.rs</span> and <span class="mono">rust_gui/src/board_editor.rs</span> because they combine low percentages with very large line counts.</li>
+    <li><strong>Runtime confidence:</strong> <span class="mono">rust_runtime/src/tui.rs</span> and <span class="mono">rust_runtime/src/firmware.rs</span> are under-tested relative to the rest of the runtime package.</li>
+    <li><strong>Error handling:</strong> <span class="mono">rust_project/src/error.rs</span> should be easy to lift from 0% with a compact formatting/variant test file.</li>
+    <li><strong>CPU depth:</strong> <span class="mono">rust_cpu/src/cpu.rs</span> is no longer the main drag on the workspace total, but it is still one of the largest uncovered files in absolute missed lines.</li>
+  </ul>
+
+  <h2>Per-File Appendix</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>File</th>
+        <th class="num">Line %</th>
+        <th class="num">Covered / Total Lines</th>
+        <th class="num">Missed</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">rust_behavior/src/builtins.rs</td><td class="num">71.79%</td><td class="num">28 / 39</td><td class="num">11</td></tr>
+      <tr><td class="mono">rust_behavior/src/lib.rs</td><td class="num">56.30%</td><td class="num">384 / 682</td><td class="num">298</td></tr>
+      <tr><td class="mono">rust_board/src/dsl.rs</td><td class="num">73.33%</td><td class="num">33 / 45</td><td class="num">12</td></tr>
+      <tr><td class="mono">rust_board/src/kicad_layout.rs</td><td class="num">94.81%</td><td class="num">584 / 616</td><td class="num">32</td></tr>
+      <tr><td class="mono">rust_board/src/kicad_pcb.rs</td><td class="num">96.39%</td><td class="num">267 / 277</td><td class="num">10</td></tr>
+      <tr><td class="mono">rust_board/src/lang.rs</td><td class="num">90.29%</td><td class="num">158 / 175</td><td class="num">17</td></tr>
+      <tr><td class="mono">rust_board/src/layout.rs</td><td class="num">100.00%</td><td class="num">25 / 25</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_board/src/models.rs</td><td class="num">96.27%</td><td class="num">387 / 402</td><td class="num">15</td></tr>
+      <tr><td class="mono">rust_board/src/sexpr.rs</td><td class="num">92.56%</td><td class="num">112 / 121</td><td class="num">9</td></tr>
+      <tr><td class="mono">rust_cpu/src/bus.rs</td><td class="num">100.00%</td><td class="num">49 / 49</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_cpu/src/config.rs</td><td class="num">100.00%</td><td class="num">54 / 54</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_cpu/src/cpu.rs</td><td class="num">67.21%</td><td class="num">1,158 / 1,723</td><td class="num">565</td></tr>
+      <tr><td class="mono">rust_cpu/src/error.rs</td><td class="num">100.00%</td><td class="num">21 / 21</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_cpu/src/lib.rs</td><td class="num">100.00%</td><td class="num">20 / 20</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_gui/src/app.rs</td><td class="num">45.52%</td><td class="num">1,220 / 2,680</td><td class="num">1,460</td></tr>
+      <tr><td class="mono">rust_gui/src/arduino.rs</td><td class="num">53.55%</td><td class="num">98 / 183</td><td class="num">85</td></tr>
+      <tr><td class="mono">rust_gui/src/board_editor.rs</td><td class="num">39.97%</td><td class="num">811 / 2,029</td><td class="num">1,218</td></tr>
+      <tr><td class="mono">rust_gui/src/pcb_view.rs</td><td class="num">53.49%</td><td class="num">506 / 946</td><td class="num">440</td></tr>
+      <tr><td class="mono">rust_gui/src/simulation.rs</td><td class="num">21.65%</td><td class="num">123 / 568</td><td class="num">445</td></tr>
+      <tr><td class="mono">rust_mcu/src/atmega2560.rs</td><td class="num">84.35%</td><td class="num">442 / 524</td><td class="num">82</td></tr>
+      <tr><td class="mono">rust_mcu/src/atmega328p.rs</td><td class="num">82.88%</td><td class="num">363 / 438</td><td class="num">75</td></tr>
+      <tr><td class="mono">rust_mcu/src/common.rs</td><td class="num">86.13%</td><td class="num">118 / 137</td><td class="num">19</td></tr>
+      <tr><td class="mono">rust_mcu/src/lib.rs</td><td class="num">100.00%</td><td class="num">79 / 79</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_project/src/assembly_bundle.rs</td><td class="num">87.93%</td><td class="num">204 / 232</td><td class="num">28</td></tr>
+      <tr><td class="mono">rust_project/src/behavior_definition.rs</td><td class="num">81.36%</td><td class="num">96 / 118</td><td class="num">22</td></tr>
+      <tr><td class="mono">rust_project/src/definitions.rs</td><td class="num">86.03%</td><td class="num">388 / 451</td><td class="num">63</td></tr>
+      <tr><td class="mono">rust_project/src/document.rs</td><td class="num">70.21%</td><td class="num">33 / 47</td><td class="num">14</td></tr>
+      <tr><td class="mono">rust_project/src/error.rs</td><td class="num">0.00%</td><td class="num">0 / 53</td><td class="num">53</td></tr>
+      <tr><td class="mono">rust_project/src/paths.rs</td><td class="num">79.17%</td><td class="num">285 / 360</td><td class="num">75</td></tr>
+      <tr><td class="mono">rust_project/src/shared.rs</td><td class="num">65.26%</td><td class="num">62 / 95</td><td class="num">33</td></tr>
+      <tr><td class="mono">rust_project/src/simulation_project.rs</td><td class="num">93.29%</td><td class="num">139 / 149</td><td class="num">10</td></tr>
+      <tr><td class="mono">rust_runtime/src/cli.rs</td><td class="num">68.99%</td><td class="num">198 / 287</td><td class="num">89</td></tr>
+      <tr><td class="mono">rust_runtime/src/firmware.rs</td><td class="num">42.59%</td><td class="num">46 / 108</td><td class="num">62</td></tr>
+      <tr><td class="mono">rust_runtime/src/main.rs</td><td class="num">100.00%</td><td class="num">6 / 6</td><td class="num">0</td></tr>
+      <tr><td class="mono">rust_runtime/src/runtime.rs</td><td class="num">86.51%</td><td class="num">109 / 126</td><td class="num">17</td></tr>
+      <tr><td class="mono">rust_runtime/src/tui.rs</td><td class="num">26.78%</td><td class="num">169 / 631</td><td class="num">462</td></tr>
+    </tbody>
+  </table>
+
+  <p class="footer">
+    Method: instrumented workspace test run with <span class="mono">RUSTFLAGS='-Cinstrument-coverage'</span>, merged via <span class="mono">xcrun llvm-profdata</span>, summarized from <span class="mono">xcrun llvm-cov export -summary-only</span>.
+  </p>
+</div>
+</body>
+</html>

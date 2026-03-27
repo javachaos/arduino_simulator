@@ -830,9 +830,70 @@ fn run_stty(args: &[&str]) -> io::Result<std::process::Output> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+    use std::sync::{Arc, Mutex};
+
+    use rust_cpu::{Cpu, CpuConfig, CpuError, DecodedInstruction, Mnemonic, OperandSet};
+    use rust_mcu::atmega328p::{Atmega328pBus, NullNanoBoard};
+
     use super::{
-        format_cpu_panel, format_serial_panel, render_screen_lines, CpuPanelState, MonitorStatus,
+        capture_snapshot, fit_line, format_cpu_panel, format_instruction, format_serial_panel,
+        format_sreg, publish_snapshot, render_screen_lines, run_monitor_chunk, serial_tail,
+        CpuPanelState, MonitorRuntime, MonitorSnapshot, MonitorStatus, SharedMonitorState,
+        SERIAL_TAIL_BYTES,
     };
+    use crate::runtime::RuntimeExit;
+
+    struct StubMonitorRuntime {
+        cpu: Cpu<Atmega328pBus<NullNanoBoard>>,
+        title: &'static str,
+        serial_output: Vec<u8>,
+        next_results: VecDeque<Result<(usize, Option<RuntimeExit>), CpuError>>,
+    }
+
+    impl StubMonitorRuntime {
+        fn new(
+            serial_output: Vec<u8>,
+            next_results: impl IntoIterator<Item = Result<(usize, Option<RuntimeExit>), CpuError>>,
+        ) -> Self {
+            Self {
+                cpu: Cpu::new(
+                    CpuConfig::atmega328p(),
+                    Atmega328pBus::new(NullNanoBoard::default(), 16_000_000),
+                ),
+                title: "Stub Monitor",
+                serial_output,
+                next_results: next_results.into_iter().collect(),
+            }
+        }
+    }
+
+    impl MonitorRuntime for StubMonitorRuntime {
+        type Bus = Atmega328pBus<NullNanoBoard>;
+
+        fn title(&self) -> &'static str {
+            self.title
+        }
+
+        fn cpu(&self) -> &Cpu<Self::Bus> {
+            &self.cpu
+        }
+
+        fn run_chunk(
+            &mut self,
+            _instruction_budget: usize,
+        ) -> Result<(usize, Option<RuntimeExit>), CpuError> {
+            self.next_results.pop_front().unwrap_or(Ok((0, None)))
+        }
+
+        fn clear_serial_output(&mut self) {
+            self.serial_output.clear();
+        }
+
+        fn serial_output_bytes(&self) -> &[u8] {
+            &self.serial_output
+        }
+    }
 
     fn sample_panel(status: MonitorStatus) -> CpuPanelState {
         let mut registers = [0u8; 32];
@@ -883,5 +944,154 @@ mod tests {
         assert_eq!(lines.len(), 18);
         assert!(lines.iter().all(|line| line.len() == 72));
         assert_eq!(lines[0].trim_end(), "Nano Monitor | RUN");
+    }
+
+    #[test]
+    fn serial_panel_keeps_latest_visible_lines_and_normalizes_carriage_returns() {
+        let lines = format_serial_panel(b"one\r\ntwo\nthree\nfour", 32, 4);
+        assert_eq!(lines[0].trim_end(), "Serial Output | 19 bytes");
+        assert_eq!(lines[1].trim_end(), "two");
+        assert_eq!(lines[2].trim_end(), "three");
+        assert_eq!(lines[3].trim_end(), "four");
+    }
+
+    #[test]
+    fn render_screen_lines_enforces_minimum_dimensions() {
+        let lines = render_screen_lines(&sample_panel(MonitorStatus::Error), b"oops", 10, 5);
+        assert_eq!(lines.len(), 16);
+        assert!(lines.iter().all(|line| line.len() == 60));
+        assert_eq!(lines[0].trim_end(), "Nano Monitor | ERROR");
+    }
+
+    #[test]
+    fn helpers_format_flags_lines_and_operands() {
+        assert_eq!(format_sreg(0b1010_0101), "I1 T0 H1 S0 V0 N1 Z0 C1");
+        assert_eq!(fit_line("abc", 5), "abc  ");
+        assert_eq!(fit_line("abcdef", 4), "abcd");
+
+        let instruction = DecodedInstruction {
+            address: 0x1234,
+            opcode: 0x9001,
+            next_word: Some(0xCAFE),
+            mnemonic: Mnemonic::LdDisp,
+            word_length: 2,
+            operands: OperandSet {
+                d: Some(17),
+                r: Some(2),
+                a: Some(0x2A),
+                b: Some(5),
+                s: Some(3),
+                k: Some(-4),
+                q: Some(6),
+                pointer: Some(rust_cpu::PointerRegister::Z),
+                mode: Some(rust_cpu::PointerMode::PostIncrement),
+            },
+        };
+
+        let rendered = format_instruction(&instruction);
+        assert!(rendered.contains("0x001234: LdDisp"));
+        assert!(rendered.contains("opcode=0x9001"));
+        assert!(rendered.contains("next=0xCAFE"));
+        assert!(rendered.contains("Z+"));
+        assert!(rendered.contains("d=r17"));
+        assert!(rendered.contains("r=r2"));
+        assert!(rendered.contains("a=0x2A"));
+        assert!(rendered.contains("b=5"));
+        assert!(rendered.contains("s=3"));
+        assert!(rendered.contains("k=-4"));
+        assert!(rendered.contains("q=6"));
+    }
+
+    #[test]
+    fn serial_tail_and_snapshot_capture_keep_recent_bytes() {
+        let bytes = vec![b'A'; SERIAL_TAIL_BYTES + 8];
+        let runtime = StubMonitorRuntime::new(
+            bytes.clone(),
+            Vec::<Result<(usize, Option<RuntimeExit>), CpuError>>::new(),
+        );
+
+        let tail = serial_tail(&bytes);
+        assert_eq!(tail.len(), SERIAL_TAIL_BYTES);
+
+        let snapshot = capture_snapshot(&runtime, MonitorStatus::Pause, Some("boom".to_string()));
+        assert_eq!(snapshot.panel.title, "Stub Monitor");
+        assert_eq!(snapshot.panel.status, MonitorStatus::Pause);
+        assert_eq!(snapshot.panel.serial_bytes, bytes.len());
+        assert_eq!(snapshot.panel.error.as_deref(), Some("boom"));
+        assert!(!snapshot.panel.next_instruction.is_empty());
+        assert_eq!(snapshot.serial_tail.len(), SERIAL_TAIL_BYTES);
+    }
+
+    #[test]
+    fn publish_snapshot_updates_shared_state_sequence() {
+        let runtime = StubMonitorRuntime::new(
+            b"abc".to_vec(),
+            Vec::<Result<(usize, Option<RuntimeExit>), CpuError>>::new(),
+        );
+        let shared = Arc::new(Mutex::new(SharedMonitorState {
+            sequence: 4,
+            snapshot: MonitorSnapshot {
+                panel: sample_panel(MonitorStatus::Run),
+                serial_tail: Vec::new(),
+            },
+        }));
+
+        publish_snapshot(
+            &runtime,
+            MonitorStatus::Done,
+            Some("finished".to_string()),
+            &shared,
+        );
+
+        let state = shared.lock().expect("state");
+        assert_eq!(state.sequence, 5);
+        assert_eq!(state.snapshot.panel.status, MonitorStatus::Done);
+        assert_eq!(state.snapshot.panel.error.as_deref(), Some("finished"));
+        assert_eq!(state.snapshot.serial_tail, b"abc");
+    }
+
+    #[test]
+    fn run_monitor_chunk_maps_runtime_exit_variants() {
+        let mut break_runtime =
+            StubMonitorRuntime::new(Vec::new(), [Ok((2, Some(RuntimeExit::BreakHit)))]);
+        let mut no_limit = None;
+        assert_eq!(
+            run_monitor_chunk(&mut break_runtime, 8, &mut no_limit).expect("break"),
+            Some(MonitorStatus::Break)
+        );
+
+        let mut sleep_runtime =
+            StubMonitorRuntime::new(Vec::new(), [Ok((2, Some(RuntimeExit::Sleeping)))]);
+        let mut no_limit = None;
+        assert_eq!(
+            run_monitor_chunk(&mut sleep_runtime, 8, &mut no_limit).expect("sleep"),
+            Some(MonitorStatus::Sleep)
+        );
+
+        let mut done_runtime = StubMonitorRuntime::new(
+            Vec::new(),
+            [Ok((1, Some(RuntimeExit::UntilSerialSatisfied)))],
+        );
+        let mut no_limit = None;
+        assert_eq!(
+            run_monitor_chunk(&mut done_runtime, 8, &mut no_limit).expect("done"),
+            Some(MonitorStatus::Done)
+        );
+
+        let mut max_runtime = StubMonitorRuntime::new(
+            Vec::new(),
+            [Ok((1, Some(RuntimeExit::MaxInstructionsReached)))],
+        );
+        assert_eq!(
+            run_monitor_chunk(&mut max_runtime, 8, &mut Some(3)).expect("max"),
+            None
+        );
+
+        let mut remaining = Some(1usize);
+        let mut capped_runtime = StubMonitorRuntime::new(Vec::new(), [Ok((1, None))]);
+        assert_eq!(
+            run_monitor_chunk(&mut capped_runtime, 8, &mut remaining).expect("remaining"),
+            Some(MonitorStatus::Done)
+        );
     }
 }

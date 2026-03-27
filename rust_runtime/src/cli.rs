@@ -409,7 +409,66 @@ fn usage() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_monitor_config, usage};
+    use std::collections::VecDeque;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use rust_cpu::CpuError;
+
+    use super::{
+        parse_monitor_config, parse_run_config, parse_usize, run_cli, run_loop, usage, CliError,
+        RunnableRuntime,
+    };
+    use crate::runtime::RuntimeExit;
+
+    #[derive(Debug)]
+    struct FakeRuntime {
+        results: VecDeque<Result<(usize, Option<RuntimeExit>), CpuError>>,
+        serial_batches: VecDeque<Vec<u8>>,
+        last_taken: Vec<u8>,
+        total_serial: Vec<u8>,
+    }
+
+    impl FakeRuntime {
+        fn new(
+            results: impl IntoIterator<Item = Result<(usize, Option<RuntimeExit>), CpuError>>,
+            serial_batches: impl IntoIterator<Item = Vec<u8>>,
+        ) -> Self {
+            Self {
+                results: results.into_iter().collect(),
+                serial_batches: serial_batches.into_iter().collect(),
+                last_taken: Vec::new(),
+                total_serial: Vec::new(),
+            }
+        }
+    }
+
+    impl RunnableRuntime for FakeRuntime {
+        fn run_chunk(
+            &mut self,
+            _instruction_budget: usize,
+            _until_serial: bool,
+        ) -> Result<(usize, Option<RuntimeExit>), CpuError> {
+            self.results.pop_front().unwrap_or(Ok((0, None)))
+        }
+
+        fn take_new_serial_bytes(&mut self) -> &[u8] {
+            self.last_taken = self.serial_batches.pop_front().unwrap_or_default();
+            self.total_serial.extend_from_slice(&self.last_taken);
+            &self.last_taken
+        }
+
+        fn serial_output_bytes(&self) -> &[u8] {
+            &self.total_serial
+        }
+    }
+
+    fn temp_path(name: &str) -> PathBuf {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("arduino-simulator-cli-{name}-{unique}.txt"))
+    }
 
     #[test]
     fn usage_mentions_monitor_commands() {
@@ -426,5 +485,162 @@ mod tests {
         assert_eq!(config.max_instructions, None);
         assert_eq!(config.chunk_size, 10_000);
         assert_eq!(config.refresh_ms, 50);
+    }
+
+    #[test]
+    fn parse_run_config_accepts_flags_and_clamps_chunk_size() {
+        let config = parse_run_config(vec![
+            "firmware.hex".to_string(),
+            "--max-instructions".to_string(),
+            "123".to_string(),
+            "--until-serial".to_string(),
+            "--chunk-size".to_string(),
+            "0".to_string(),
+            "--out".to_string(),
+            "serial.log".to_string(),
+        ])
+        .expect("run config");
+
+        assert_eq!(config.firmware_path, PathBuf::from("firmware.hex"));
+        assert_eq!(config.max_instructions, Some(123));
+        assert!(config.until_serial);
+        assert_eq!(config.chunk_size, 1);
+        assert_eq!(config.out_path, Some(PathBuf::from("serial.log")));
+    }
+
+    #[test]
+    fn parse_run_config_reports_usage_errors() {
+        assert!(matches!(
+            parse_run_config(Vec::<String>::new()),
+            Err(CliError::Usage(message)) if message.contains("missing firmware hex path")
+        ));
+
+        assert!(matches!(
+            parse_run_config(vec!["--max-instructions".to_string()]),
+            Err(CliError::Usage(message))
+                if message == "--max-instructions requires a numeric value"
+        ));
+
+        assert!(matches!(
+            parse_run_config(vec!["firmware.hex".to_string(), "--out".to_string()]),
+            Err(CliError::Usage(message)) if message == "--out requires a file path"
+        ));
+
+        assert!(matches!(
+            parse_run_config(vec!["firmware.hex".to_string(), "--bogus".to_string()]),
+            Err(CliError::Usage(message)) if message.contains("unknown option `--bogus`")
+        ));
+
+        assert!(matches!(
+            parse_run_config(vec![
+                "firmware.hex".to_string(),
+                "extra.hex".to_string(),
+            ]),
+            Err(CliError::Usage(message))
+                if message == "unexpected extra positional argument `extra.hex`"
+        ));
+
+        assert!(matches!(
+            parse_run_config(vec!["--help".to_string()]),
+            Err(CliError::Usage(message)) if message.contains("Usage:")
+        ));
+    }
+
+    #[test]
+    fn parse_monitor_config_accepts_overrides_and_reports_errors() {
+        let config = parse_monitor_config(vec![
+            "monitor.hex".to_string(),
+            "--max-instructions".to_string(),
+            "55".to_string(),
+            "--chunk-size".to_string(),
+            "0".to_string(),
+            "--refresh-ms".to_string(),
+            "250".to_string(),
+        ])
+        .expect("monitor config");
+
+        assert_eq!(config.firmware_path, PathBuf::from("monitor.hex"));
+        assert_eq!(config.max_instructions, Some(55));
+        assert_eq!(config.chunk_size, 1);
+        assert_eq!(config.refresh_ms, 250);
+
+        assert!(matches!(
+            parse_monitor_config(vec!["--refresh-ms".to_string()]),
+            Err(CliError::Usage(message))
+                if message == "--refresh-ms requires a numeric value"
+        ));
+
+        assert!(matches!(
+            parse_monitor_config(vec!["monitor.hex".to_string(), "--oops".to_string()]),
+            Err(CliError::Usage(message)) if message.contains("unknown option `--oops`")
+        ));
+    }
+
+    #[test]
+    fn parse_usize_rejects_non_numeric_values() {
+        assert!(matches!(
+            parse_usize("--chunk-size", "abc"),
+            Err(CliError::Usage(message))
+                if message == "--chunk-size expects an unsigned integer, got `abc`"
+        ));
+    }
+
+    #[test]
+    fn run_loop_writes_serial_output_to_file_and_returns_zero() {
+        let out_path = temp_path("serial-output");
+        let runtime = FakeRuntime::new(
+            [Ok((3, Some(RuntimeExit::UntilSerialSatisfied)))],
+            [b"OK".to_vec()],
+        );
+
+        let status = run_loop(runtime, None, true, 64, Some(&out_path)).expect("status");
+        assert_eq!(status, 0);
+        assert_eq!(fs::read(&out_path).expect("output"), b"OK");
+
+        let _ = fs::remove_file(out_path);
+    }
+
+    #[test]
+    fn run_loop_returns_no_serial_output_when_requested() {
+        let runtime = FakeRuntime::new([Ok((1, Some(RuntimeExit::BreakHit)))], [Vec::new()]);
+
+        assert!(matches!(
+            run_loop(runtime, None, true, 64, None),
+            Err(CliError::NoSerialOutput)
+        ));
+    }
+
+    #[test]
+    fn run_loop_short_circuits_when_instruction_budget_is_zero() {
+        let runtime = FakeRuntime::new(
+            Vec::<Result<(usize, Option<RuntimeExit>), CpuError>>::new(),
+            Vec::<Vec<u8>>::new(),
+        );
+        let status = run_loop(runtime, Some(0), false, 64, None).expect("status");
+        assert_eq!(status, 0);
+    }
+
+    #[test]
+    fn run_loop_propagates_cpu_errors() {
+        let runtime = FakeRuntime::new([Err(CpuError::Sleeping)], [Vec::new()]);
+
+        assert!(matches!(
+            run_loop(runtime, None, false, 64, None),
+            Err(CliError::Cpu(CpuError::Sleeping))
+        ));
+    }
+
+    #[test]
+    fn run_cli_handles_help_and_unknown_commands() {
+        assert_eq!(
+            run_cli(["arduino-simulator".to_string(), "help".to_string()]).expect("help"),
+            0
+        );
+
+        assert!(matches!(
+            run_cli(["arduino-simulator".to_string(), "mystery".to_string()]),
+            Err(CliError::Usage(message))
+                if message.contains("unknown command `mystery`") && message.contains("Usage:")
+        ));
     }
 }

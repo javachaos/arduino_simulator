@@ -217,12 +217,13 @@ fn find_hex_output(build_path: &Path, sketch_name: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::PathBuf;
 
     use tempfile::tempdir;
 
     use rust_project::HostBoard;
 
-    use super::{find_hex_output, resolve_compile_plan};
+    use super::{find_hex_output, resolve_compile_plan, sanitize_name, ArduinoCliError};
 
     #[test]
     fn resolve_compile_plan_accepts_ino_file() {
@@ -261,5 +262,78 @@ mod tests {
 
         let found = find_hex_output(build, "hello").expect("hex");
         assert_eq!(found, preferred);
+    }
+
+    #[test]
+    fn sanitize_name_replaces_invalid_characters_and_defaults_when_empty() {
+        assert_eq!(sanitize_name("hello world!"), "hello-world-");
+        assert_eq!(sanitize_name("already_ok"), "already_ok");
+        assert_eq!(sanitize_name(""), "sketch");
+    }
+
+    #[test]
+    fn resolve_compile_plan_rejects_unsupported_sources() {
+        let temp = tempdir().expect("tempdir");
+        let source = temp.path().join("notes.txt");
+        fs::write(&source, "not a sketch").expect("write text");
+
+        assert!(matches!(
+            resolve_compile_plan(&source, HostBoard::NanoV3),
+            Err(ArduinoCliError::UnsupportedSource(path)) if path == source
+        ));
+    }
+
+    #[test]
+    fn find_hex_output_falls_back_to_sorted_candidates() {
+        let temp = tempdir().expect("tempdir");
+        let build = temp.path();
+        let alpha = build.join("alpha.ino.hex");
+        let zeta = build.join("zeta.ino.hex");
+        let boot = build.join("alpha.ino.with_bootloader.hex");
+        fs::write(&alpha, ":00000001FF\n").expect("write alpha");
+        fs::write(&zeta, ":00000001FF\n").expect("write zeta");
+        fs::write(&boot, ":00000001FF\n").expect("write boot");
+
+        let found = find_hex_output(build, "missing").expect("fallback hex");
+        assert_eq!(found, alpha);
+    }
+
+    #[test]
+    fn error_display_messages_are_human_readable() {
+        let io_error = ArduinoCliError::Io(std::io::Error::other("tool missing"));
+        assert_eq!(io_error.to_string(), "tool missing");
+
+        let unsupported = ArduinoCliError::UnsupportedSource(PathBuf::from("notes.txt"));
+        assert_eq!(
+            unsupported.to_string(),
+            "expected a sketch directory or .ino file, got notes.txt"
+        );
+
+        let missing_parent = ArduinoCliError::MissingSketchParent(PathBuf::from("hello.ino"));
+        assert_eq!(
+            missing_parent.to_string(),
+            "missing parent directory for hello.ino"
+        );
+
+        let missing_name = ArduinoCliError::MissingSketchName(PathBuf::from("/tmp/.ino"));
+        assert_eq!(
+            missing_name.to_string(),
+            "could not determine sketch name for /tmp/.ino"
+        );
+
+        let missing_hex = ArduinoCliError::MissingHexOutput(PathBuf::from("/tmp/build"));
+        assert_eq!(
+            missing_hex.to_string(),
+            "arduino-cli finished but no .hex output was found in /tmp/build"
+        );
+
+        let failed = ArduinoCliError::CommandFailed {
+            command: "arduino-cli compile".to_string(),
+            stdout: "build output".to_string(),
+            stderr: "bad exit".to_string(),
+        };
+        assert!(failed
+            .to_string()
+            .contains("arduino-cli compile failed\nstdout:\nbuild output\n\nstderr:\nbad exit"));
     }
 }

@@ -115,3 +115,148 @@ impl From<serde_json::Error> for ProjectError {
         Self::Json(value)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::Value;
+
+    use super::ProjectError;
+
+    #[test]
+    fn display_messages_cover_every_project_error_variant() {
+        let io_error = std::io::Error::other("disk offline");
+        let io_expected = io_error.to_string();
+
+        let json_error = serde_json::from_str::<Value>("{").expect_err("invalid json");
+        let json_expected = json_error.to_string();
+
+        let cases = vec![
+            (ProjectError::Io(io_error), io_expected),
+            (ProjectError::Json(json_error), json_expected),
+            (
+                ProjectError::EmptyName("board definition"),
+                "board definition name must not be empty".to_string(),
+            ),
+            (
+                ProjectError::MissingFirmwarePath,
+                "firmware source path must not be empty".to_string(),
+            ),
+            (
+                ProjectError::MissingPcbPath,
+                "PCB source path must not be empty".to_string(),
+            ),
+            (
+                ProjectError::UnknownBoardModel("mystery".to_string()),
+                "unknown built-in board model mystery".to_string(),
+            ),
+            (
+                ProjectError::UnknownModuleModel("sensor".to_string()),
+                "unknown module overlay model sensor".to_string(),
+            ),
+            (
+                ProjectError::UnknownBoardSignal("A7".to_string()),
+                "unknown host-board signal A7".to_string(),
+            ),
+            (
+                ProjectError::DuplicateBoardSignal("D13".to_string()),
+                "duplicate binding for host-board signal D13".to_string(),
+            ),
+            (
+                ProjectError::DuplicateModuleOverlay("display".to_string()),
+                "duplicate module overlay named display".to_string(),
+            ),
+            (
+                ProjectError::EmptyModuleSignal("sensor".to_string()),
+                "module overlay sensor contains an empty signal binding".to_string(),
+            ),
+            (
+                ProjectError::DuplicateModuleSignal {
+                    module_name: "sensor".to_string(),
+                    signal: "SCL".to_string(),
+                },
+                "module overlay sensor binds signal SCL more than once".to_string(),
+            ),
+            (
+                ProjectError::EmptyPcbNet("D2".to_string()),
+                "binding for D2 does not specify a PCB net".to_string(),
+            ),
+            (
+                ProjectError::MissingDefinitionSource("carrier".to_string()),
+                "definition source for carrier is incomplete".to_string(),
+            ),
+            (
+                ProjectError::InvalidDefinitionSource("bad source".to_string()),
+                "bad source".to_string(),
+            ),
+            (
+                ProjectError::InvalidDefinitionReference("bad reference".to_string()),
+                "bad reference".to_string(),
+            ),
+            (
+                ProjectError::DuplicateBehaviorPort("uart_tx".to_string()),
+                "duplicate behavior port binding for uart_tx".to_string(),
+            ),
+            (
+                ProjectError::DuplicateBehaviorRole("sensor".to_string()),
+                "duplicate behavior role binding for sensor".to_string(),
+            ),
+            (
+                ProjectError::EmptyBehaviorRole,
+                "behavior role must not be empty".to_string(),
+            ),
+            (
+                ProjectError::InvalidBehaviorParameter("baud".to_string()),
+                "invalid behavior parameter baud".to_string(),
+            ),
+            (
+                ProjectError::DuplicatePortName("VIN".to_string()),
+                "duplicate port name VIN".to_string(),
+            ),
+            (
+                ProjectError::EmptyPortName,
+                "port name must not be empty".to_string(),
+            ),
+            (
+                ProjectError::DuplicateInstanceId("rtc".to_string()),
+                "duplicate attached instance id rtc".to_string(),
+            ),
+            (
+                ProjectError::UnknownInstanceId("rtc".to_string()),
+                "unknown attached instance id rtc".to_string(),
+            ),
+            (
+                ProjectError::UnknownPrimaryPort("CANH".to_string()),
+                "unknown primary port CANH".to_string(),
+            ),
+            (
+                ProjectError::UnknownChildPort {
+                    instance_id: "sensor".to_string(),
+                    port: "SDA".to_string(),
+                },
+                "unknown port SDA on attached instance sensor".to_string(),
+            ),
+            (
+                ProjectError::DuplicateExportName("telemetry".to_string()),
+                "duplicate assembly export telemetry".to_string(),
+            ),
+            (
+                ProjectError::UnexpectedDocumentKind("module_definition".to_string()),
+                "document kind module_definition does not match the requested type".to_string(),
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(error.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn io_and_json_errors_convert_via_from_impls() {
+        let io_error: ProjectError = std::io::Error::other("permission denied").into();
+        assert!(matches!(io_error, ProjectError::Io(_)));
+
+        let json_source = serde_json::from_str::<Value>("{").expect_err("invalid json");
+        let json_error: ProjectError = json_source.into();
+        assert!(matches!(json_error, ProjectError::Json(_)));
+    }
+}

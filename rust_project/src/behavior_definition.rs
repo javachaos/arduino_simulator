@@ -209,4 +209,78 @@ mod tests {
             ProjectError::DuplicateBehaviorRole(_)
         ));
     }
+
+    #[test]
+    fn behavior_engine_labels_cover_every_variant() {
+        let cases = [
+            (BehaviorEngine::Sht31I2cSensor, "SHT31 I2C Sensor"),
+            (
+                BehaviorEngine::TempHumidityI2cSensor,
+                "Temperature and Humidity I2C Sensor",
+            ),
+            (
+                BehaviorEngine::EnvironmentalI2cSensor,
+                "Environmental I2C Sensor",
+            ),
+            (
+                BehaviorEngine::AmbientLightI2cSensor,
+                "Ambient Light I2C Sensor",
+            ),
+            (
+                BehaviorEngine::PowerMonitorI2cSensor,
+                "Power Monitor I2C Sensor",
+            ),
+            (BehaviorEngine::Imu6DofI2cSensor, "6-DoF IMU I2C Sensor"),
+            (BehaviorEngine::Adc4ChannelI2c, "4-Channel ADC I2C Sensor"),
+            (
+                BehaviorEngine::TofDistanceI2cSensor,
+                "Time-of-Flight Distance I2C Sensor",
+            ),
+            (
+                BehaviorEngine::ThermocoupleSpiSensor,
+                "Thermocouple SPI Sensor",
+            ),
+            (BehaviorEngine::Mcp2515CanModule, "MCP2515 CAN Module"),
+            (BehaviorEngine::Max31865RtdFrontend, "MAX31865 RTD Frontend"),
+            (BehaviorEngine::PwmToVoltage, "PWM to Voltage"),
+        ];
+
+        for (engine, label) in cases {
+            assert_eq!(engine.label(), label);
+        }
+    }
+
+    #[test]
+    fn behavior_port_binding_rejects_empty_fields() {
+        let empty_port = BehaviorPortBinding::new("   ", "role");
+        assert!(matches!(
+            empty_port.validate(),
+            Err(ProjectError::EmptyPortName)
+        ));
+
+        let empty_role = BehaviorPortBinding::new("PORT", "   ");
+        assert!(matches!(
+            empty_role.validate(),
+            Err(ProjectError::EmptyBehaviorRole)
+        ));
+    }
+
+    #[test]
+    fn behavior_definition_rejects_empty_name_and_invalid_parameters() {
+        let mut empty_name = sample_behavior();
+        empty_name.name = "   ".to_string();
+        assert!(matches!(
+            empty_name.validate(),
+            Err(ProjectError::EmptyName("behavior definition"))
+        ));
+
+        let mut invalid_parameter = sample_behavior();
+        invalid_parameter
+            .parameters
+            .insert("   ".to_string(), BehaviorValue::Bool(true));
+        assert!(matches!(
+            invalid_parameter.validate(),
+            Err(ProjectError::InvalidBehaviorParameter(parameter)) if parameter.trim().is_empty()
+        ));
+    }
 }

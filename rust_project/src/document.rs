@@ -64,10 +64,15 @@ impl AvrSimDocument {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::path::PathBuf;
+
+    use tempfile::tempdir;
 
     use super::AvrSimDocument;
     use crate::definitions::{BoardDefinition, DefinitionSource};
+    use crate::error::ProjectError;
+    use crate::shared::{FirmwareSource, FirmwareSourceKind};
 
     #[test]
     fn document_kind_names_are_stable() {
@@ -86,5 +91,59 @@ mod tests {
         ));
         let json = document.to_json_pretty().expect("json");
         assert!(json.contains("\"kind\": \"board_definition\""));
+    }
+
+    #[test]
+    fn validate_delegates_to_inner_document() {
+        let document = AvrSimDocument::BoardDefinition(BoardDefinition::new(
+            "   ",
+            DefinitionSource::virtual_only(),
+        ));
+
+        assert!(matches!(
+            document.validate(),
+            Err(ProjectError::EmptyName("board definition"))
+        ));
+    }
+
+    #[test]
+    fn save_and_load_json_round_trip_relative_paths() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("workspace");
+        let document_path = root.join("docs/board.avrsim.json");
+        fs::create_dir_all(document_path.parent().expect("parent")).expect("create docs dir");
+
+        let mut definition = BoardDefinition::new(
+            "carrier",
+            DefinitionSource::kicad_pcb(root.join("pcb/board.kicad_pcb")),
+        );
+        definition.default_firmware = Some(FirmwareSource {
+            kind: FirmwareSourceKind::Hex,
+            path: root.join("firmware/carrier.hex"),
+            compiled_hex_path: Some(root.join("build/carrier.hex")),
+        });
+        let document = AvrSimDocument::BoardDefinition(definition.clone());
+
+        document.save_json(&document_path).expect("save");
+        let raw = fs::read_to_string(&document_path).expect("json");
+        assert!(raw.contains("../pcb/board.kicad_pcb"));
+        assert!(raw.contains("../firmware/carrier.hex"));
+        assert!(raw.contains("../build/carrier.hex"));
+        assert!(!raw.contains(root.to_string_lossy().as_ref()));
+
+        let loaded = AvrSimDocument::load_json(&document_path).expect("load");
+        assert_eq!(loaded, document);
+    }
+
+    #[test]
+    fn load_json_surfaces_json_errors() {
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("broken.avrsim.json");
+        fs::write(&path, "{ definitely not json").expect("write invalid json");
+
+        assert!(matches!(
+            AvrSimDocument::load_json(&path),
+            Err(ProjectError::Json(_))
+        ));
     }
 }

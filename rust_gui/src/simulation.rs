@@ -818,7 +818,57 @@ fn format_compile_log(artifact: &crate::arduino::CompileArtifact) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{serial_text, SimulationSnapshot, SimulatorStatus};
+    use std::fs;
+    use std::path::PathBuf;
+
+    use tempfile::tempdir;
+
+    use rust_cpu::{DecodedInstruction, Mnemonic, OperandSet};
+    use rust_runtime::RuntimeExit;
+
+    use super::{
+        capture_snapshot, format_compile_log, format_instruction, load_runtime_from_hex,
+        map_runtime_exit, serial_text, service_pending_serial, PendingSerialInjection,
+        RuntimeController, SharedSimulationState, SimulationSnapshot, SimulatorStatus, WorkerState,
+        SERIAL_TAIL_BYTES,
+    };
+    use crate::arduino::CompileArtifact;
+
+    fn ldi(d: u8, k: u8) -> u16 {
+        assert!((16..=31).contains(&d));
+        0xE000 | (((k as u16) & 0xF0) << 4) | (((d - 16) as u16) << 4) | ((k as u16) & 0x0F)
+    }
+
+    fn brk() -> u16 {
+        0x9598
+    }
+
+    fn hex_record(address: u16, record_type: u8, payload: &[u8]) -> String {
+        let mut body = Vec::with_capacity(payload.len() + 5);
+        body.push(payload.len() as u8);
+        body.push((address >> 8) as u8);
+        body.push((address & 0xFF) as u8);
+        body.push(record_type);
+        body.extend_from_slice(payload);
+        let checksum =
+            (0u8).wrapping_sub(body.iter().fold(0u8, |acc, byte| acc.wrapping_add(*byte)));
+        body.push(checksum);
+        format!(
+            ":{}",
+            body.iter()
+                .map(|byte| format!("{byte:02X}"))
+                .collect::<String>()
+        )
+    }
+
+    fn words_to_bytes(words: &[u16]) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(words.len() * 2);
+        for word in words {
+            bytes.push((word & 0xFF) as u8);
+            bytes.push((word >> 8) as u8);
+        }
+        bytes
+    }
 
     #[test]
     fn serial_text_normalizes_carriage_returns() {
@@ -831,5 +881,226 @@ mod tests {
         let snapshot = SimulationSnapshot::default();
         assert_eq!(snapshot.status, SimulatorStatus::Idle);
         assert!(snapshot.status_message.contains("Load"));
+    }
+
+    #[test]
+    fn simulator_status_labels_and_shared_defaults_are_stable() {
+        let cases = [
+            (SimulatorStatus::Idle, "Idle"),
+            (SimulatorStatus::Compiling, "Compiling"),
+            (SimulatorStatus::Ready, "Ready"),
+            (SimulatorStatus::Running, "Running"),
+            (SimulatorStatus::Paused, "Paused"),
+            (SimulatorStatus::Break, "Break"),
+            (SimulatorStatus::Sleep, "Sleep"),
+            (SimulatorStatus::Done, "Done"),
+            (SimulatorStatus::Error, "Error"),
+        ];
+
+        for (status, label) in cases {
+            assert_eq!(status.label(), label);
+        }
+
+        let shared = SharedSimulationState::default();
+        assert_eq!(shared.sequence, 1);
+        assert_eq!(shared.snapshot.status, SimulatorStatus::Idle);
+    }
+
+    #[test]
+    fn serial_text_keeps_only_the_recent_tail() {
+        let mut bytes = vec![b'A'; 32];
+        bytes.extend(vec![b'B'; SERIAL_TAIL_BYTES]);
+
+        let text = serial_text(&bytes);
+        assert_eq!(text.len(), SERIAL_TAIL_BYTES);
+        assert!(text.starts_with('B'));
+        assert!(!text.contains('A'));
+    }
+
+    #[test]
+    fn capture_snapshot_without_runtime_preserves_worker_metadata() {
+        let mut state = WorkerState::new();
+        state.loaded_board = rust_project::HostBoard::NanoV3;
+        state.source_path = Some(PathBuf::from("sketches/blink.ino"));
+        state.firmware_path = Some(PathBuf::from("build/blink.hex"));
+        state.compile_log = "compile ok".to_string();
+        state.status = SimulatorStatus::Error;
+        state.status_message = "compile failed".to_string();
+
+        let snapshot = capture_snapshot(&state);
+        assert_eq!(snapshot.board, rust_project::HostBoard::NanoV3);
+        assert_eq!(snapshot.status, SimulatorStatus::Error);
+        assert_eq!(
+            snapshot.source_path,
+            Some(PathBuf::from("sketches/blink.ino"))
+        );
+        assert_eq!(
+            snapshot.firmware_path,
+            Some(PathBuf::from("build/blink.hex"))
+        );
+        assert_eq!(snapshot.compile_log, "compile ok");
+        assert_eq!(snapshot.status_message, "compile failed");
+    }
+
+    #[test]
+    fn format_compile_log_includes_command_output_and_loaded_hex_path() {
+        let artifact = CompileArtifact {
+            board: rust_project::HostBoard::Mega2560Rev3,
+            sketch_path: PathBuf::from("/tmp/blink"),
+            build_path: PathBuf::from("/tmp/build"),
+            hex_path: PathBuf::from("/tmp/build/blink.ino.hex"),
+            stdout: "compiled".to_string(),
+            stderr: "warnings".to_string(),
+        };
+
+        let rendered = format_compile_log(&artifact);
+        assert!(rendered.contains("arduino-cli compile --fqbn arduino:avr:mega"));
+        assert!(rendered.contains("--- stdout ---\ncompiled\n"));
+        assert!(rendered.contains("--- stderr ---\nwarnings\n"));
+        assert!(rendered.contains("Loaded HEX: /tmp/build/blink.ino.hex"));
+    }
+
+    #[test]
+    fn format_instruction_renders_operands_and_next_word() {
+        let instruction = DecodedInstruction {
+            address: 0x40,
+            opcode: 0x9002,
+            next_word: Some(0xCAFE),
+            mnemonic: Mnemonic::LdDisp,
+            word_length: 2,
+            operands: OperandSet {
+                d: Some(18),
+                r: Some(3),
+                a: Some(0x20),
+                b: Some(4),
+                s: Some(6),
+                k: Some(7),
+                q: Some(2),
+                pointer: Some(rust_cpu::PointerRegister::Y),
+                mode: Some(rust_cpu::PointerMode::PreDecrement),
+            },
+        };
+
+        let rendered = format_instruction(&instruction);
+        assert!(rendered.contains("0x000040: LdDisp"));
+        assert!(rendered.contains("opcode=0x9002"));
+        assert!(rendered.contains("next=0xCAFE"));
+        assert!(rendered.contains("-Y"));
+        assert!(rendered.contains("d=r18"));
+        assert!(rendered.contains("r=r3"));
+        assert!(rendered.contains("a=0x20"));
+        assert!(rendered.contains("b=4"));
+        assert!(rendered.contains("s=6"));
+        assert!(rendered.contains("k=7"));
+        assert!(rendered.contains("q=2"));
+    }
+
+    #[test]
+    fn runtime_exit_mapping_matches_simulator_statuses() {
+        assert_eq!(
+            map_runtime_exit(Some(RuntimeExit::BreakHit)),
+            Some(SimulatorStatus::Break)
+        );
+        assert_eq!(
+            map_runtime_exit(Some(RuntimeExit::Sleeping)),
+            Some(SimulatorStatus::Sleep)
+        );
+        assert_eq!(
+            map_runtime_exit(Some(RuntimeExit::UntilSerialSatisfied)),
+            Some(SimulatorStatus::Done)
+        );
+        assert_eq!(
+            map_runtime_exit(Some(RuntimeExit::MaxInstructionsReached)),
+            None
+        );
+        assert_eq!(map_runtime_exit(None), None);
+    }
+
+    #[test]
+    fn load_runtime_from_hex_sets_ready_state_for_valid_firmware() {
+        let temp = tempdir().expect("tempdir");
+        let source_path = temp.path().join("blink.ino");
+        let firmware_path = temp.path().join("blink.hex");
+        let hex = format!(
+            "{}\n{}\n",
+            hex_record(0x0000, 0x00, &words_to_bytes(&[ldi(16, 0x2A), brk()])),
+            hex_record(0x0000, 0x01, &[])
+        );
+        fs::write(&firmware_path, hex).expect("write hex");
+
+        let mut state = WorkerState::new();
+        load_runtime_from_hex(
+            &mut state,
+            rust_project::HostBoard::NanoV3,
+            Some(source_path.clone()),
+            &firmware_path,
+        );
+
+        assert_eq!(state.status, SimulatorStatus::Ready);
+        assert_eq!(state.source_path, Some(source_path));
+        assert_eq!(state.firmware_path, Some(firmware_path.clone()));
+        assert!(matches!(state.runtime, Some(RuntimeController::Nano(_))));
+
+        let snapshot = capture_snapshot(&state);
+        assert_eq!(snapshot.board, rust_project::HostBoard::NanoV3);
+        assert_eq!(snapshot.status, SimulatorStatus::Ready);
+        assert_eq!(snapshot.firmware_path, Some(firmware_path));
+        assert!(!snapshot.next_instruction.is_empty());
+    }
+
+    #[test]
+    fn load_runtime_from_hex_sets_error_state_for_invalid_firmware() {
+        let temp = tempdir().expect("tempdir");
+        let firmware_path = temp.path().join("broken.hex");
+        fs::write(&firmware_path, "not intel hex").expect("write invalid hex");
+
+        let mut state = WorkerState::new();
+        load_runtime_from_hex(
+            &mut state,
+            rust_project::HostBoard::Mega2560Rev3,
+            None,
+            &firmware_path,
+        );
+
+        assert!(state.runtime.is_none());
+        assert_eq!(state.status, SimulatorStatus::Error);
+        assert_eq!(state.firmware_path, Some(firmware_path));
+        assert!(!state.status_message.is_empty());
+    }
+
+    #[test]
+    fn service_pending_serial_injects_bytes_when_cycles_advance() {
+        let mut state = WorkerState::new();
+        state.runtime = Some(RuntimeController::Nano(rust_runtime::NanoRuntime::new()));
+        state.pending_serial.push_back(PendingSerialInjection {
+            remaining: vec![b'O', b'K'].into_iter().collect(),
+            cycles_per_byte: 10,
+            next_cycle: 0,
+        });
+
+        service_pending_serial(&mut state);
+        match state.runtime.as_ref().expect("runtime") {
+            RuntimeController::Nano(runtime) => {
+                assert_eq!(runtime.cpu.bus.serial0.rx_queue.len(), 1);
+                assert_eq!(runtime.cpu.bus.serial0.rx_queue[0], b'O');
+            }
+            RuntimeController::Mega(_) => panic!("expected nano runtime"),
+        }
+        assert_eq!(state.pending_serial.len(), 1);
+
+        match state.runtime.as_mut().expect("runtime") {
+            RuntimeController::Nano(runtime) => runtime.cpu.cycles = 10,
+            RuntimeController::Mega(_) => panic!("expected nano runtime"),
+        }
+        service_pending_serial(&mut state);
+
+        match state.runtime.as_ref().expect("runtime") {
+            RuntimeController::Nano(runtime) => {
+                assert_eq!(runtime.cpu.bus.serial0.rx_queue.len(), 2);
+                assert_eq!(runtime.cpu.bus.serial0.rx_queue[1], b'K');
+            }
+            RuntimeController::Mega(_) => panic!("expected nano runtime"),
+        }
+        assert!(state.pending_serial.is_empty());
     }
 }

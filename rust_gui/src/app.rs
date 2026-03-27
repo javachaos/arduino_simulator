@@ -212,6 +212,7 @@ impl eframe::App for AvrSimGuiApp {
                         });
                     if self.selected_board != previous_board {
                         self.prune_bindings_for_selected_board();
+                        self.reload_source_for_selected_board_if_unwired();
                     }
 
                     ui.label("Source:");
@@ -226,6 +227,17 @@ impl eframe::App for AvrSimGuiApp {
                             .pick_file()
                         {
                             self.source_path = path.display().to_string();
+                            if let Some(hinted_board) = inferred_host_board_from_source(&self.source_path)
+                            {
+                                if hinted_board != self.selected_board {
+                                    self.selected_board = hinted_board;
+                                    self.prune_bindings_for_selected_board();
+                                    self.project_notice = format!(
+                                        "Selected target changed to {} based on the source file name.",
+                                        hinted_board.label()
+                                    );
+                                }
+                            }
                         }
                     }
                 });
@@ -314,6 +326,17 @@ impl eframe::App for AvrSimGuiApp {
                     ui.colored_label(status_color(self.snapshot.status), self.snapshot.status.label());
                     ui.separator();
                     ui.label(&self.snapshot.status_message);
+                    if target_runtime_board_mismatch(self.selected_board, &self.snapshot) {
+                        ui.separator();
+                        ui.colored_label(
+                            Color32::from_rgb(220, 180, 60),
+                            format!(
+                                "Target is {} but loaded runtime is {}. Reload or recompile to switch boards.",
+                                self.selected_board.label(),
+                                self.snapshot.board.label()
+                            ),
+                        );
+                    }
                     if !self.project_notice.is_empty() {
                         ui.separator();
                         ui.label(&self.project_notice);
@@ -337,7 +360,10 @@ impl eframe::App for AvrSimGuiApp {
                     .num_columns(2)
                     .spacing([12.0, 4.0])
                     .show(ui, |ui| {
-                        summary_row(ui, "Board", displayed_board.label());
+                        summary_row(ui, "Target", self.selected_board.label());
+                        if self.snapshot.firmware_path.is_some() {
+                            summary_row(ui, "Runtime", displayed_board.label());
+                        }
                         summary_row(ui, "PC", &format!("0x{:06X}", self.snapshot.pc));
                         summary_row(ui, "SP", &format!("0x{:04X}", self.snapshot.sp));
                         summary_row(ui, "Cycles", &self.snapshot.cycles.to_string());
@@ -467,6 +493,38 @@ impl AvrSimGuiApp {
         }
     }
 
+    fn reload_source_for_selected_board_if_unwired(&mut self) {
+        if !can_hot_swap_target_without_pcb(
+            self.loaded_pcb.is_some(),
+            &self.source_path,
+            &self.snapshot,
+        ) {
+            return;
+        }
+
+        let path = PathBuf::from(self.source_path.trim());
+        match classify_source(&self.source_path) {
+            SourceAction::Compile => {
+                self.controller
+                    .compile_and_load(path.clone(), self.selected_board);
+                self.project_notice = format!(
+                    "Switched target to {} and recompiling {}.",
+                    self.selected_board.label(),
+                    path.display()
+                );
+            }
+            SourceAction::LoadHex => {
+                self.controller.load_hex(path.clone(), self.selected_board);
+                self.project_notice = format!(
+                    "Switched target to {} and reloading {}.",
+                    self.selected_board.label(),
+                    path.display()
+                );
+            }
+            SourceAction::None => {}
+        }
+    }
+
     fn draw_host_board_card(&mut self, ui: &mut egui::Ui, board: HostBoard) {
         let context_note = if self.snapshot.firmware_path.is_some() {
             "Loaded runtime board"
@@ -478,6 +536,12 @@ impl AvrSimGuiApp {
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.label(RichText::new("Current Board").strong());
             ui.small(format!("{context_note}: {}", board.label()));
+            if target_runtime_board_mismatch(self.selected_board, &self.snapshot) {
+                ui.small(format!(
+                    "Target selection is {}. Reload or recompile to apply it.",
+                    self.selected_board.label()
+                ));
+            }
             ui.add_space(6.0);
             if let Some(preview) = &preview {
                 let bindings = self.host_board_preview_bindings(board, preview);
@@ -1478,6 +1542,48 @@ fn displayed_host_board(selected_board: HostBoard, snapshot: &SimulationSnapshot
         snapshot.board
     } else {
         selected_board
+    }
+}
+
+fn can_hot_swap_target_without_pcb(
+    has_loaded_pcb: bool,
+    source_path: &str,
+    snapshot: &SimulationSnapshot,
+) -> bool {
+    !has_loaded_pcb
+        && snapshot.firmware_path.is_some()
+        && matches!(
+            classify_source(source_path),
+            SourceAction::Compile | SourceAction::LoadHex
+        )
+}
+
+fn target_runtime_board_mismatch(selected_board: HostBoard, snapshot: &SimulationSnapshot) -> bool {
+    snapshot.firmware_path.is_some() && snapshot.board != selected_board
+}
+
+fn inferred_host_board_from_source(path: &str) -> Option<HostBoard> {
+    let normalized = path.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    if normalized.contains("atmega328") || normalized.contains("328p") {
+        return Some(HostBoard::NanoV3);
+    }
+    if normalized.contains("atmega2560") || normalized.contains("2560") {
+        return Some(HostBoard::Mega2560Rev3);
+    }
+
+    let looks_like_nano = normalized.contains("nano");
+    let looks_like_mega = normalized.contains("/mega")
+        || normalized.contains("_mega")
+        || normalized.contains("mega_");
+
+    match (looks_like_nano, looks_like_mega) {
+        (true, false) => Some(HostBoard::NanoV3),
+        (false, true) => Some(HostBoard::Mega2560Rev3),
+        _ => None,
     }
 }
 
@@ -2664,13 +2770,15 @@ mod tests {
     use rust_project::{BindingMode, HostBoard, ModuleOverlay};
 
     use super::{
-        auto_wire_module_overlay, available_module_models, candidate_pcb_nets, classify_source,
-        common_baud_rates, connectable_pin_indicator_color, controller_signal_suggestions,
-        default_project_name, display_stem_for_path, displayed_host_board,
-        host_signal_levels_for_snapshot, host_signal_names, infer_binding_mode, module_model_title,
+        auto_wire_module_overlay, available_module_models, can_hot_swap_target_without_pcb,
+        candidate_pcb_nets, classify_source, common_baud_rates, connectable_pin_indicator_color,
+        controller_signal_suggestions, default_project_name, display_stem_for_path,
+        displayed_host_board, host_signal_levels_for_snapshot, host_signal_names,
+        infer_binding_mode, inferred_host_board_from_source, module_model_title,
         module_signal_aliases, module_signal_suggestions, next_module_overlay_name,
         sanitize_project_name, should_auto_apply_suggestion, standard_controller_signal_label,
-        AvrSimGuiApp, ControllerConnection, SignalActivity, SourceAction,
+        target_runtime_board_mismatch, AvrSimGuiApp, ControllerConnection, SignalActivity,
+        SourceAction,
     };
     use crate::simulation::{SimulationSnapshot, SimulatorStatus};
 
@@ -2715,6 +2823,59 @@ mod tests {
             displayed_host_board(HostBoard::NanoV3, &loaded),
             HostBoard::Mega2560Rev3
         );
+    }
+
+    #[test]
+    fn inferred_host_board_detects_common_source_name_hints() {
+        assert_eq!(
+            inferred_host_board_from_source("/tmp/nano_pin_sweep.ino"),
+            Some(HostBoard::NanoV3)
+        );
+        assert_eq!(
+            inferred_host_board_from_source("/tmp/mega_pin_sweep.ino"),
+            Some(HostBoard::Mega2560Rev3)
+        );
+        assert_eq!(
+            inferred_host_board_from_source("/tmp/atmega328p_blink.hex"),
+            Some(HostBoard::NanoV3)
+        );
+        assert_eq!(
+            inferred_host_board_from_source("/tmp/atmega2560_blink.hex"),
+            Some(HostBoard::Mega2560Rev3)
+        );
+        assert_eq!(inferred_host_board_from_source("/tmp/controller.ino"), None);
+    }
+
+    #[test]
+    fn target_runtime_mismatch_and_hot_swap_rules_are_explicit() {
+        let snapshot = SimulationSnapshot::default();
+        assert!(!target_runtime_board_mismatch(HostBoard::NanoV3, &snapshot));
+        assert!(!can_hot_swap_target_without_pcb(
+            false,
+            "/tmp/nano.ino",
+            &snapshot
+        ));
+
+        let mut loaded = SimulationSnapshot::default();
+        loaded.board = HostBoard::Mega2560Rev3;
+        loaded.firmware_path = Some(PathBuf::from("/tmp/blink.hex"));
+
+        assert!(target_runtime_board_mismatch(HostBoard::NanoV3, &loaded));
+        assert!(can_hot_swap_target_without_pcb(
+            false,
+            "/tmp/nano.ino",
+            &loaded
+        ));
+        assert!(!can_hot_swap_target_without_pcb(
+            true,
+            "/tmp/nano.ino",
+            &loaded
+        ));
+        assert!(!can_hot_swap_target_without_pcb(
+            false,
+            "/tmp/readme.txt",
+            &loaded
+        ));
     }
 
     #[test]
