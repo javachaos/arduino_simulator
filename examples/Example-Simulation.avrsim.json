@@ -1,0 +1,274 @@
+{
+  "kind": "simulation_project",
+  "format_version": "0.3.0",
+  "name": "Example Simulation",
+  "description": null,
+  "host_board": "mega2560_rev3",
+  "firmware": {
+    "kind": "ino",
+    "path": "./ino/dewpoint_controller/dewpoint_controller.ino",
+    "compiled_hex_path": null
+  },
+  "pcb": {
+    "path": "./pcbs/mega_r3_sidecar_controller_rev_a.kicad_pcb",
+    "board_name_hint": "mega_r3_sidecar_controller_rev_a"
+  },
+  "root_assembly": null,
+  "module_overlays": [],
+  "bindings": [
+    {
+      "board_signal": "+5V",
+      "pcb_net": "+5V",
+      "mode": "power",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "A10",
+      "pcb_net": "/ADC10",
+      "mode": "analog",
+      "note": "Auto-bound by arduino_simulator (medium, pin number)"
+    },
+    {
+      "board_signal": "A11",
+      "pcb_net": "/ADC11",
+      "mode": "analog",
+      "note": "Auto-bound by arduino_simulator (medium, pin number)"
+    },
+    {
+      "board_signal": "A12",
+      "pcb_net": "/ADC12",
+      "mode": "analog",
+      "note": "Auto-bound by arduino_simulator (medium, pin number)"
+    },
+    {
+      "board_signal": "A13",
+      "pcb_net": "/ADC13",
+      "mode": "analog",
+      "note": "Auto-bound by arduino_simulator (medium, pin number)"
+    },
+    {
+      "board_signal": "A14",
+      "pcb_net": "/ADC14",
+      "mode": "analog",
+      "note": "Auto-bound by arduino_simulator (medium, pin number)"
+    },
+    {
+      "board_signal": "A15",
+      "pcb_net": "/ADC15",
+      "mode": "analog",
+      "note": "Auto-bound by arduino_simulator (medium, pin number)"
+    },
+    {
+      "board_signal": "A8",
+      "pcb_net": "/ADC8",
+      "mode": "analog",
+      "note": "Auto-bound by arduino_simulator (medium, pin number)"
+    },
+    {
+      "board_signal": "A9",
+      "pcb_net": "/ADC9",
+      "mode": "analog",
+      "note": "Auto-bound by arduino_simulator (medium, pin number)"
+    },
+    {
+      "board_signal": "D22",
+      "pcb_net": "/PA0",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D23",
+      "pcb_net": "/PA1",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D24",
+      "pcb_net": "/PA2",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D25",
+      "pcb_net": "/PA3",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D26",
+      "pcb_net": "/PA4",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D27",
+      "pcb_net": "/PA5",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D28",
+      "pcb_net": "/PA6",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D29",
+      "pcb_net": "/PA7",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D30",
+      "pcb_net": "/PC7",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D31",
+      "pcb_net": "/PC6",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D32",
+      "pcb_net": "/PC5",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D33",
+      "pcb_net": "/PC4",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D34",
+      "pcb_net": "/PC3",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D35",
+      "pcb_net": "/PC2",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D36",
+      "pcb_net": "/PC1",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D37",
+      "pcb_net": "/PC0",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D38",
+      "pcb_net": "/PD7",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D39",
+      "pcb_net": "/PG2",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D40",
+      "pcb_net": "/PG1",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D41",
+      "pcb_net": "/PG0",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D42",
+      "pcb_net": "/PL7",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D43",
+      "pcb_net": "/PL6",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D44_PWM",
+      "pcb_net": "/PL5",
+      "mode": "analog",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D45_PWM",
+      "pcb_net": "/PL4",
+      "mode": "analog",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D46_PWM",
+      "pcb_net": "/PL3",
+      "mode": "analog",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D47",
+      "pcb_net": "/PL2",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D48",
+      "pcb_net": "/PL1",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D49",
+      "pcb_net": "/PL0",
+      "mode": "digital",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D50_MISO",
+      "pcb_net": "/PB3",
+      "mode": "bus",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D51_MOSI",
+      "pcb_net": "/PB2",
+      "mode": "bus",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D52_SCK",
+      "pcb_net": "/PB1",
+      "mode": "bus",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "D53_SS",
+      "pcb_net": "/PB0",
+      "mode": "bus",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    },
+    {
+      "board_signal": "GND",
+      "pcb_net": "GND",
+      "mode": "power",
+      "note": "Auto-bound by arduino_simulator (exact, exact alias)"
+    }
+  ],
+  "probes": [],
+  "stimuli": []
+}
