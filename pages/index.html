@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Arduino Simulator Web</title>
+    
+<script type="module">
+import init, * as bindings from './arduino-simulator-web-d5f0d1ab62b7985c.js';
+const wasm = await init({ module_or_path: './arduino-simulator-web-d5f0d1ab62b7985c_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+        background:
+          radial-gradient(circle at top, rgba(54, 121, 255, 0.16), transparent 36%),
+          linear-gradient(180deg, #08111d 0%, #0d1625 54%, #08111d 100%);
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: transparent;
+      }
+
+      body {
+        min-height: 100vh;
+      }
+
+      #app-shell {
+        width: 100vw;
+        height: 100vh;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  <link rel="modulepreload" href="./arduino-simulator-web-d5f0d1ab62b7985c.js" crossorigin="anonymous" integrity="sha384-uyX4bYOIL/TTRwlCyt3z10h5iytfyz4t0Gr7od4TvY6l0TkwL+QOsrJJmH2tZ49T"><link rel="preload" href="./arduino-simulator-web-d5f0d1ab62b7985c_bg.wasm" crossorigin="anonymous" integrity="sha384-ujwOzeU3F7byO0aHZDC0b0HyHbEpLHIVc26Y/ioc3G6+mOrfw20V6PSZn79WmvLF" as="fetch" type="application/wasm"></head>
+  <body>
+    <div id="app-shell">
+      <canvas id="app-canvas"></canvas>
+    </div>
+  </body>
+</html>

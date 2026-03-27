@@ -9,8 +9,8 @@ pub mod sexpr;
 pub use dsl::{
     derive_nets, Board, Component, DslError, Net, NetConnection, Pad, Position, DSL_VERSION,
 };
-pub use kicad_layout::layout_from_kicad_pcb;
-pub use kicad_pcb::board_from_kicad_pcb;
+pub use kicad_layout::{layout_from_kicad_pcb, layout_from_kicad_pcb_text};
+pub use kicad_pcb::{board_from_kicad_pcb, board_from_kicad_pcb_text};
 pub use lang::dump_board_dsl;
 pub use layout::{
     BoardLayout, Bounds, CirclePrimitive, FootprintLayout, LinePrimitive, PadGeometry, Point,

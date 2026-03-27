@@ -475,18 +475,17 @@ fn bounds_from_layout(
     .expand(3.0)
 }
 
-pub fn layout_from_kicad_pcb(path: impl AsRef<Path>) -> Result<BoardLayout, DslError> {
-    let path = path.as_ref().canonicalize().map_err(DslError::from)?;
-    let text = fs::read_to_string(&path).map_err(DslError::from)?;
+fn parse_layout_from_kicad_pcb(
+    board_name: &str,
+    source_path: &str,
+    text: &str,
+) -> Result<BoardLayout, DslError> {
     let root = parse_sexpr(&text)?;
     let root_list = root
         .as_list()
-        .ok_or_else(|| DslError::new(format!("{} is not a KiCad PCB file", path.display())))?;
+        .ok_or_else(|| DslError::new(format!("{source_path} is not a KiCad PCB file")))?;
     if root_list.first().and_then(SExpr::as_atom) != Some("kicad_pcb") {
-        return Err(DslError::new(format!(
-            "{} is not a KiCad PCB file",
-            path.display()
-        )));
+        return Err(DslError::new(format!("{source_path} is not a KiCad PCB file")));
     }
 
     let mut footprints = root_list
@@ -652,12 +651,8 @@ pub fn layout_from_kicad_pcb(path: impl AsRef<Path>) -> Result<BoardLayout, DslE
     );
 
     Ok(BoardLayout {
-        name: path
-            .file_stem()
-            .and_then(|value| value.to_str())
-            .unwrap_or_default()
-            .to_string(),
-        source_path: path.display().to_string(),
+        name: board_name.to_string(),
+        source_path: source_path.to_string(),
         bounds,
         footprints,
         edge_cuts,
@@ -670,11 +665,30 @@ pub fn layout_from_kicad_pcb(path: impl AsRef<Path>) -> Result<BoardLayout, DslE
     })
 }
 
+pub fn layout_from_kicad_pcb_text(
+    board_name: &str,
+    source_path: &str,
+    text: &str,
+) -> Result<BoardLayout, DslError> {
+    parse_layout_from_kicad_pcb(board_name, source_path, text)
+}
+
+pub fn layout_from_kicad_pcb(path: impl AsRef<Path>) -> Result<BoardLayout, DslError> {
+    let path = path.as_ref().canonicalize().map_err(DslError::from)?;
+    let text = fs::read_to_string(&path).map_err(DslError::from)?;
+    let board_name = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_string();
+    parse_layout_from_kicad_pcb(&board_name, &path.display().to_string(), &text)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use super::layout_from_kicad_pcb;
+    use super::{layout_from_kicad_pcb, layout_from_kicad_pcb_text};
 
     fn examples_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/pcbs")
@@ -706,5 +720,19 @@ mod tests {
             .iter()
             .any(|footprint| footprint.reference == "P_DIG"));
         assert!(layout.vias.len() > 10);
+    }
+
+    #[test]
+    fn imports_layout_from_embedded_text() {
+        let path = example_pcb_path("arduino_mega_2560_rev3e.kicad_pcb");
+        let text = std::fs::read_to_string(&path).expect("read text");
+
+        let layout =
+            layout_from_kicad_pcb_text("arduino_mega_2560_rev3e", "embedded://mega", &text)
+                .expect("layout");
+
+        assert_eq!(layout.name, "arduino_mega_2560_rev3e");
+        assert_eq!(layout.source_path, "embedded://mega");
+        assert!(!layout.footprints.is_empty());
     }
 }

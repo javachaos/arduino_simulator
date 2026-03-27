@@ -206,18 +206,17 @@ fn component_sort_key(component: &Component) -> (&str, &str) {
     (&component.reference, &component.footprint)
 }
 
-pub fn board_from_kicad_pcb(path: impl AsRef<Path>) -> Result<Board, DslError> {
-    let path = path.as_ref().canonicalize().map_err(DslError::from)?;
-    let text = fs::read_to_string(&path).map_err(DslError::from)?;
+fn parse_board_from_kicad_pcb(
+    board_name: &str,
+    source_path: &str,
+    text: &str,
+) -> Result<Board, DslError> {
     let root = parse_sexpr(&text)?;
     let root_list = root
         .as_list()
-        .ok_or_else(|| DslError::new(format!("{} is not a KiCad PCB file", path.display())))?;
+        .ok_or_else(|| DslError::new(format!("{source_path} is not a KiCad PCB file")))?;
     if root_list.first().and_then(SExpr::as_atom) != Some("kicad_pcb") {
-        return Err(DslError::new(format!(
-            "{} is not a KiCad PCB file",
-            path.display()
-        )));
+        return Err(DslError::new(format!("{source_path} is not a KiCad PCB file")));
     }
 
     let title = first_child(root_list, "title_block")
@@ -247,14 +246,10 @@ pub fn board_from_kicad_pcb(path: impl AsRef<Path>) -> Result<Board, DslError> {
     components.sort_by(|left, right| component_sort_key(left).cmp(&component_sort_key(right)));
 
     Ok(Board {
-        name: path
-            .file_stem()
-            .and_then(|value| value.to_str())
-            .unwrap_or_default()
-            .to_string(),
+        name: board_name.to_string(),
         title,
         source_format: "kicad_pcb".to_string(),
-        source_path: path.display().to_string(),
+        source_path: source_path.to_string(),
         generator: first_atom(first_child(root_list, "generator"), 1).map(str::to_string),
         generator_version: first_atom(first_child(root_list, "generator_version"), 1)
             .map(str::to_string),
@@ -266,11 +261,30 @@ pub fn board_from_kicad_pcb(path: impl AsRef<Path>) -> Result<Board, DslError> {
     })
 }
 
+pub fn board_from_kicad_pcb_text(
+    board_name: &str,
+    source_path: &str,
+    text: &str,
+) -> Result<Board, DslError> {
+    parse_board_from_kicad_pcb(board_name, source_path, text)
+}
+
+pub fn board_from_kicad_pcb(path: impl AsRef<Path>) -> Result<Board, DslError> {
+    let path = path.as_ref().canonicalize().map_err(DslError::from)?;
+    let text = fs::read_to_string(&path).map_err(DslError::from)?;
+    let board_name = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_string();
+    parse_board_from_kicad_pcb(&board_name, &path.display().to_string(), &text)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use super::board_from_kicad_pcb;
+    use super::{board_from_kicad_pcb, board_from_kicad_pcb_text};
 
     fn examples_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/pcbs")
@@ -317,5 +331,18 @@ mod tests {
         );
         assert_eq!(component_pad_net(&board, "K1", "1"), Some("CANH"));
         assert_eq!(component_pad_net(&board, "J101", "5"), Some("/PA4"));
+    }
+
+    #[test]
+    fn imports_board_from_embedded_text() {
+        let path = example_pcb_path("arduino_nano_v3_3.kicad_pcb");
+        let text = std::fs::read_to_string(&path).expect("read text");
+
+        let board = board_from_kicad_pcb_text("arduino_nano_v3_3", "embedded://nano", &text)
+            .expect("board");
+
+        assert_eq!(board.name, "arduino_nano_v3_3");
+        assert_eq!(board.source_path, "embedded://nano");
+        assert!(board.nets.iter().any(|net| net.name == "A0"));
     }
 }
