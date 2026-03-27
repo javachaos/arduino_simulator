@@ -40,3 +40,9 @@ The window supports these flows:
 
 Once firmware is loaded, use `Run`, `Pause`, `Step`, `Reset`, and `Clear Serial`
 from the toolbar.
+
+For the least-friction controller matching, `Current Board` highlighting, and
+auto-wiring, keep your PCB net names aligned with the selected Arduino board.
+The GUI matches best when nets use the Arduino signal names directly, such as
+`D22`, `D50_MISO`, or `A10`, or the official MCU-port names used by that board
+design, such as `PA0`, `PC6`, or `PK2` on a Mega 2560.

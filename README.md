@@ -77,6 +77,12 @@ The GUI can:
 The GUI and project crates use `rust_board` for KiCad import, built-in board
 models, and layout rendering.
 
+For the least-friction auto-wiring and live net highlighting, keep your PCB net
+names aligned with the selected Arduino board. In practice that means using the
+same Arduino-facing signal names where possible, such as `D22`, `D50_MISO`, or
+`A10`, or the official MCU-port names used by that board design, such as
+`PA0`, `PC6`, or `PK2` on a Mega 2560.
+
 ## Rust Workspace
 
 Run the native test suites from the workspace root:

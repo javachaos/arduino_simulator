@@ -316,6 +316,6 @@ mod tests {
             Some("Mega R3 Sidecar Controller Rev A")
         );
         assert_eq!(component_pad_net(&board, "K1", "1"), Some("CANH"));
-        assert_eq!(component_pad_net(&board, "J101", "5"), Some("/27"));
+        assert_eq!(component_pad_net(&board, "J101", "5"), Some("/PA4"));
     }
 }

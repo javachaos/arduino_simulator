@@ -473,21 +473,21 @@ impl AvrSimGuiApp {
         } else {
             "Selected target board"
         };
-        let bindings = self.host_board_preview_bindings(board);
-        let active_nets = self.active_host_preview_nets(board);
         let module_nets = BTreeSet::new();
-        let preview = self.board_preview(board);
+        let preview = self.board_preview(board).cloned();
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.label(RichText::new("Current Board").strong());
             ui.small(format!("{context_note}: {}", board.label()));
             ui.add_space(6.0);
-            if let Some(preview) = preview {
+            if let Some(preview) = &preview {
+                let bindings = self.host_board_preview_bindings(board, preview);
+                let active_nets = self.active_host_preview_nets(board, preview);
                 let height = 190.0;
                 ui.allocate_ui_with_layout(
                     egui::vec2(ui.available_width(), height),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
-                        render_pcb(ui, &preview, &bindings, &[], &module_nets, &active_nets);
+                        render_pcb(ui, preview, &bindings, &[], &module_nets, &active_nets);
                     },
                 );
                 if !bindings.is_empty() {
@@ -519,27 +519,44 @@ impl AvrSimGuiApp {
         slot.as_ref()
     }
 
-    fn host_board_preview_bindings(&self, board: HostBoard) -> Vec<SignalBinding> {
+    fn host_board_preview_bindings(
+        &self,
+        board: HostBoard,
+        preview: &LoadedPcb,
+    ) -> Vec<SignalBinding> {
         let valid = host_signals_for_board(board)
             .into_iter()
             .collect::<BTreeSet<_>>();
+        let preview_nets = preview.net_names.iter().cloned().collect::<BTreeSet<_>>();
         let mut bindings = self
             .bindings
             .values()
             .filter(|binding| valid.contains(&binding.board_signal))
-            .map(|binding| SignalBinding {
-                board_signal: binding.board_signal.clone(),
-                pcb_net: binding.board_signal.clone(),
-                mode: binding.mode,
-                note: binding.note.clone(),
+            .flat_map(|binding| {
+                preview_net_aliases(board, &binding.board_signal, &preview_nets)
+                    .into_iter()
+                    .map(|pcb_net| SignalBinding {
+                        board_signal: binding.board_signal.clone(),
+                        pcb_net,
+                        mode: binding.mode,
+                        note: binding.note.clone(),
+                    })
             })
             .collect::<Vec<_>>();
-        bindings.sort_by(|left, right| left.board_signal.cmp(&right.board_signal));
+        bindings.sort_by(|left, right| {
+            left.board_signal
+                .cmp(&right.board_signal)
+                .then_with(|| left.pcb_net.cmp(&right.pcb_net))
+        });
+        bindings.dedup_by(|left, right| {
+            left.board_signal == right.board_signal && left.pcb_net == right.pcb_net
+        });
         bindings
     }
 
-    fn active_host_preview_nets(&self, board: HostBoard) -> BTreeSet<String> {
+    fn active_host_preview_nets(&self, board: HostBoard, preview: &LoadedPcb) -> BTreeSet<String> {
         let now = Instant::now();
+        let preview_nets = preview.net_names.iter().cloned().collect::<BTreeSet<_>>();
         host_signals_for_board(board)
             .into_iter()
             .filter(|signal| {
@@ -550,6 +567,7 @@ impl AvrSimGuiApp {
                         .map(|deadline| *deadline > now)
                         .unwrap_or(false)
             })
+            .flat_map(|signal| preview_net_aliases(board, &signal, &preview_nets))
             .collect()
     }
 
@@ -584,12 +602,21 @@ impl AvrSimGuiApp {
                         path.display()
                     );
                 } else {
+                    let (rebound, dropped) = self.reconcile_controller_bindings();
                     let module_bound = self.auto_wire_all_modules();
-                    self.project_notice = format!(
-                        "Loaded PCB {} with {} controller binding(s) and rewired {module_bound} module signal(s).",
-                        path.display(),
-                        self.bindings.len(),
-                    );
+                    if rebound > 0 || dropped > 0 {
+                        self.project_notice = format!(
+                            "Loaded PCB {} and refreshed {} controller binding(s) after dropping {dropped} stale net reference(s); rewired {module_bound} module signal(s).",
+                            path.display(),
+                            rebound,
+                        );
+                    } else {
+                        self.project_notice = format!(
+                            "Loaded PCB {} with {} controller binding(s) and rewired {module_bound} module signal(s).",
+                            path.display(),
+                            self.bindings.len(),
+                        );
+                    }
                 }
             }
             Err(error) => {
@@ -786,11 +813,17 @@ impl AvrSimGuiApp {
                         .as_ref()
                         .map(|binding| binding.mode)
                         .unwrap_or_else(|| infer_binding_mode(&signal));
-                    let suggestions = controller_signal_suggestions(&signal, &available_nets);
+                    let suggestions = controller_signal_suggestions(
+                        self.selected_board,
+                        &signal,
+                        &available_nets,
+                    );
+                    let display_signal =
+                        standard_controller_signal_label(self.selected_board, &signal);
 
                     ui.group(|ui| {
                         ui.horizontal_wrapped(|ui| {
-                            ui.monospace(&signal);
+                            ui.monospace(display_signal);
                             ui.separator();
                             ui.label(binding_mode_label(mode));
                         });
@@ -918,10 +951,14 @@ impl AvrSimGuiApp {
                     for connection in &connections {
                         let activity = self.controller_signal_activity(&connection.controller_pin);
                         let indicator_color = connectable_pin_indicator_color(activity, pulse_time);
+                        let display_pin = standard_controller_signal_label(
+                            self.selected_board,
+                            &connection.controller_pin,
+                        );
                         ui.group(|ui| {
                             ui.horizontal_wrapped(|ui| {
                                 ui.colored_label(indicator_color, "●");
-                                ui.monospace(&connection.controller_pin);
+                                ui.monospace(display_pin);
                                 ui.small("->");
                                 ui.label(&connection.pcb_net);
                             });
@@ -1096,7 +1133,8 @@ impl AvrSimGuiApp {
             if self.bindings.contains_key(&signal) {
                 continue;
             }
-            let suggestions = controller_signal_suggestions(&signal, &available);
+            let suggestions =
+                controller_signal_suggestions(self.selected_board, &signal, &available);
             if !should_auto_apply_suggestion(&suggestions) {
                 continue;
             }
@@ -1119,6 +1157,57 @@ impl AvrSimGuiApp {
             bound += 1;
         }
         bound
+    }
+
+    fn reconcile_controller_bindings(&mut self) -> (usize, usize) {
+        let available = self
+            .loaded_pcb
+            .as_ref()
+            .map(|loaded| loaded.net_names.iter().cloned().collect::<BTreeSet<_>>())
+            .unwrap_or_default();
+        if available.is_empty() {
+            return (0, 0);
+        }
+
+        let stale_signals = self
+            .bindings
+            .iter()
+            .filter_map(|(signal, binding)| {
+                (!available.contains(&binding.pcb_net)).then_some(signal.clone())
+            })
+            .collect::<Vec<_>>();
+        let dropped = stale_signals.len();
+        for signal in &stale_signals {
+            self.bindings.remove(signal.as_str());
+        }
+
+        let mut rebound = 0usize;
+        for signal in stale_signals {
+            let suggestions =
+                controller_signal_suggestions(self.selected_board, &signal, &available);
+            if !should_auto_apply_suggestion(&suggestions) {
+                continue;
+            }
+            let Some(best) = suggestions.first() else {
+                continue;
+            };
+            self.bindings.insert(
+                signal.clone(),
+                SignalBinding {
+                    board_signal: signal.clone(),
+                    pcb_net: best.net_name.clone(),
+                    mode: infer_binding_mode(&signal),
+                    note: Some(format!(
+                        "Rebound by arduino_simulator after PCB net refresh ({}, {})",
+                        best.confidence_label(),
+                        best.reason
+                    )),
+                },
+            );
+            rebound += 1;
+        }
+
+        (rebound, dropped)
     }
 
     fn binding_list(&self) -> Vec<SignalBinding> {
@@ -1260,13 +1349,6 @@ impl AvrSimGuiApp {
         );
         if project.pcb.path.is_file() {
             self.load_pcb_path(&project.pcb.path, false);
-            if self.loaded_pcb.is_some() {
-                self.project_notice = format!(
-                    "Loaded project with {} controller binding(s) and {} module overlay(s).",
-                    self.bindings.len(),
-                    self.module_overlays.len()
-                );
-            }
         }
     }
 
@@ -1586,7 +1668,7 @@ fn binding_mode_label(mode: BindingMode) -> &'static str {
     }
 }
 
-fn candidate_pcb_nets(signal: &str) -> Vec<String> {
+fn candidate_pcb_nets(board: HostBoard, signal: &str) -> Vec<String> {
     let mut candidates = Vec::new();
     let mut push_unique = |candidate: String| {
         if !candidates.iter().any(|existing| existing == &candidate) {
@@ -1610,7 +1692,270 @@ fn candidate_pcb_nets(signal: &str) -> Vec<String> {
         push_unique(format!("A{number}"));
         push_unique(format!("/A{number}"));
     }
+    for alias in controller_signal_aliases(board, signal) {
+        push_unique(alias);
+    }
     candidates
+}
+
+fn preview_net_aliases(
+    board: HostBoard,
+    signal: &str,
+    preview_nets: &BTreeSet<String>,
+) -> Vec<String> {
+    let mut aliases = Vec::new();
+    let mut push_if_present = |candidate: String| {
+        if preview_nets.contains(&candidate)
+            && !aliases.iter().any(|existing| existing == &candidate)
+        {
+            aliases.push(candidate);
+        }
+    };
+
+    push_if_present(signal.to_string());
+    for alias in controller_signal_aliases(board, signal) {
+        push_if_present(alias);
+    }
+
+    if aliases.is_empty() {
+        aliases.push(signal.to_string());
+    }
+
+    aliases
+}
+
+fn controller_signal_aliases(board: HostBoard, signal: &str) -> Vec<String> {
+    let mut aliases = controller_port_aliases(board, signal);
+    aliases.extend(controller_board_label_aliases(board, signal));
+    if let Some(adc_alias) = analog_channel_alias(signal) {
+        aliases.push(adc_alias.clone());
+        aliases.push(format!("/{adc_alias}"));
+    }
+    aliases
+}
+
+fn controller_board_label_aliases(board: HostBoard, signal: &str) -> Vec<String> {
+    match board {
+        HostBoard::Mega2560Rev3 => Vec::new(),
+        HostBoard::NanoV3 => nano_controller_board_label_aliases(signal),
+    }
+}
+
+fn controller_port_aliases(board: HostBoard, signal: &str) -> Vec<String> {
+    match board {
+        HostBoard::Mega2560Rev3 => mega_controller_port_aliases(signal),
+        HostBoard::NanoV3 => nano_controller_port_aliases(signal),
+    }
+}
+
+fn analog_channel_alias(signal: &str) -> Option<String> {
+    parse_board_signal_number(signal, 'A').map(|number| format!("ADC{number}"))
+}
+
+fn standard_controller_signal_label(board: HostBoard, signal: &str) -> String {
+    match board {
+        HostBoard::Mega2560Rev3 => standard_mega_signal_label(signal),
+        HostBoard::NanoV3 => standard_nano_signal_label(signal),
+    }
+}
+
+fn standard_mega_signal_label(signal: &str) -> String {
+    if let Some(adc_alias) = analog_channel_alias(signal) {
+        return adc_alias;
+    }
+    controller_port_aliases(HostBoard::Mega2560Rev3, signal)
+        .into_iter()
+        .find(|alias| !alias.starts_with('/'))
+        .unwrap_or_else(|| signal.to_string())
+}
+
+fn standard_nano_signal_label(signal: &str) -> String {
+    match signal {
+        "D0_RX" | "D0" => "D0/RX".to_string(),
+        "D1_TX" | "D1" => "D1/TX".to_string(),
+        "D10_SS" | "D10" => "D10/SS".to_string(),
+        "D11_MOSI" | "D11" => "D11/MOSI".to_string(),
+        "D12_MISO" | "D12" => "D12/MISO".to_string(),
+        "D13_SCK" | "D13" => "D13/SCK".to_string(),
+        "A4_SDA" | "A4" => "A4/SDA".to_string(),
+        "A5_SCL" | "A5" => "A5/SCL".to_string(),
+        _ => signal.to_string(),
+    }
+}
+
+fn parse_board_signal_number(signal: &str, prefix: char) -> Option<u8> {
+    let rest = signal.strip_prefix(prefix)?;
+    let digits = rest.split('_').next()?;
+    if digits.is_empty() || !digits.chars().all(|character| character.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+fn push_port_alias(aliases: &mut Vec<String>, port: &str) {
+    aliases.push(port.to_string());
+    aliases.push(format!("/{port}"));
+}
+
+fn mega_controller_port_aliases(signal: &str) -> Vec<String> {
+    let mut aliases = Vec::new();
+
+    if let Some(number) = parse_board_signal_number(signal, 'D') {
+        let port = match number {
+            0 => Some("PE0"),
+            1 => Some("PE1"),
+            2 => Some("PE4"),
+            3 => Some("PE5"),
+            4 => Some("PG5"),
+            5 => Some("PE3"),
+            6 => Some("PH3"),
+            7 => Some("PH4"),
+            8 => Some("PH5"),
+            9 => Some("PH6"),
+            10 => Some("PB4"),
+            11 => Some("PB5"),
+            12 => Some("PB6"),
+            13 => Some("PB7"),
+            14 => Some("PJ1"),
+            15 => Some("PJ0"),
+            16 => Some("PH1"),
+            17 => Some("PH0"),
+            18 => Some("PD3"),
+            19 => Some("PD2"),
+            20 => Some("PD1"),
+            21 => Some("PD0"),
+            22 => Some("PA0"),
+            23 => Some("PA1"),
+            24 => Some("PA2"),
+            25 => Some("PA3"),
+            26 => Some("PA4"),
+            27 => Some("PA5"),
+            28 => Some("PA6"),
+            29 => Some("PA7"),
+            30 => Some("PC7"),
+            31 => Some("PC6"),
+            32 => Some("PC5"),
+            33 => Some("PC4"),
+            34 => Some("PC3"),
+            35 => Some("PC2"),
+            36 => Some("PC1"),
+            37 => Some("PC0"),
+            38 => Some("PD7"),
+            39 => Some("PG2"),
+            40 => Some("PG1"),
+            41 => Some("PG0"),
+            42 => Some("PL7"),
+            43 => Some("PL6"),
+            44 => Some("PL5"),
+            45 => Some("PL4"),
+            46 => Some("PL3"),
+            47 => Some("PL2"),
+            48 => Some("PL1"),
+            49 => Some("PL0"),
+            50 => Some("PB3"),
+            51 => Some("PB2"),
+            52 => Some("PB1"),
+            53 => Some("PB0"),
+            _ => None,
+        };
+        if let Some(port) = port {
+            push_port_alias(&mut aliases, port);
+        }
+    }
+
+    if let Some(number) = parse_board_signal_number(signal, 'A') {
+        let port = match number {
+            0 => Some("PF0"),
+            1 => Some("PF1"),
+            2 => Some("PF2"),
+            3 => Some("PF3"),
+            4 => Some("PF4"),
+            5 => Some("PF5"),
+            6 => Some("PF6"),
+            7 => Some("PF7"),
+            8 => Some("PK0"),
+            9 => Some("PK1"),
+            10 => Some("PK2"),
+            11 => Some("PK3"),
+            12 => Some("PK4"),
+            13 => Some("PK5"),
+            14 => Some("PK6"),
+            15 => Some("PK7"),
+            _ => None,
+        };
+        if let Some(port) = port {
+            push_port_alias(&mut aliases, port);
+        }
+    }
+
+    aliases
+}
+
+fn nano_controller_port_aliases(signal: &str) -> Vec<String> {
+    let mut aliases = Vec::new();
+
+    if let Some(number) = parse_board_signal_number(signal, 'D') {
+        let port = match number {
+            0 => Some("PD0"),
+            1 => Some("PD1"),
+            2 => Some("PD2"),
+            3 => Some("PD3"),
+            4 => Some("PD4"),
+            5 => Some("PD5"),
+            6 => Some("PD6"),
+            7 => Some("PD7"),
+            8 => Some("PB0"),
+            9 => Some("PB1"),
+            10 => Some("PB2"),
+            11 => Some("PB3"),
+            12 => Some("PB4"),
+            13 => Some("PB5"),
+            _ => None,
+        };
+        if let Some(port) = port {
+            push_port_alias(&mut aliases, port);
+        }
+    }
+
+    if let Some(number) = parse_board_signal_number(signal, 'A') {
+        let port = match number {
+            0 => Some("PC0"),
+            1 => Some("PC1"),
+            2 => Some("PC2"),
+            3 => Some("PC3"),
+            4 => Some("PC4"),
+            5 => Some("PC5"),
+            _ => None,
+        };
+        if let Some(port) = port {
+            push_port_alias(&mut aliases, port);
+        }
+    }
+
+    aliases
+}
+
+fn nano_controller_board_label_aliases(signal: &str) -> Vec<String> {
+    let mut aliases = Vec::new();
+    let mut push_label_aliases = |label: &str| {
+        aliases.push(label.to_string());
+        aliases.push(format!("/{label}"));
+        aliases.push(format!("/{}", label.replace('/', "{slash}")));
+    };
+
+    match signal {
+        "D0_RX" | "D0" => push_label_aliases("D0/RX"),
+        "D1_TX" | "D1" => push_label_aliases("D1/TX"),
+        "D10_SS" | "D10" => push_label_aliases("D10/SS"),
+        "D11_MOSI" | "D11" => push_label_aliases("D11/MOSI"),
+        "D12_MISO" | "D12" => push_label_aliases("D12/MISO"),
+        "D13_SCK" | "D13" => push_label_aliases("D13/SCK"),
+        "A4_SDA" | "A4" => push_label_aliases("A4/SDA"),
+        "A5_SCL" | "A5" => push_label_aliases("A5/SCL"),
+        _ => {}
+    }
+
+    aliases
 }
 
 fn canonical_signal_name(value: &str) -> String {
@@ -1751,10 +2096,11 @@ fn suggest_pcb_nets(
 }
 
 fn controller_signal_suggestions(
+    board: HostBoard,
     signal: &str,
     available_nets: &BTreeSet<String>,
 ) -> Vec<NetSuggestion> {
-    suggest_pcb_nets(signal, &candidate_pcb_nets(signal), available_nets)
+    suggest_pcb_nets(signal, &candidate_pcb_nets(board, signal), available_nets)
 }
 
 fn module_signal_suggestions(
@@ -2313,6 +2659,7 @@ fn connectable_pin_indicator_color(activity: SignalActivity, pulse_time: f32) ->
 mod tests {
     use std::{collections::BTreeSet, path::PathBuf};
 
+    use rust_board::load_built_in_board_model;
     use rust_mcu::{BoardPin, BoardPinLevel};
     use rust_project::{BindingMode, HostBoard, ModuleOverlay};
 
@@ -2322,8 +2669,8 @@ mod tests {
         default_project_name, display_stem_for_path, displayed_host_board,
         host_signal_levels_for_snapshot, host_signal_names, infer_binding_mode, module_model_title,
         module_signal_aliases, module_signal_suggestions, next_module_overlay_name,
-        sanitize_project_name, should_auto_apply_suggestion, AvrSimGuiApp, ControllerConnection,
-        SignalActivity, SourceAction,
+        sanitize_project_name, should_auto_apply_suggestion, standard_controller_signal_label,
+        AvrSimGuiApp, ControllerConnection, SignalActivity, SourceAction,
     };
     use crate::simulation::{SimulationSnapshot, SimulatorStatus};
 
@@ -2372,8 +2719,27 @@ mod tests {
 
     #[test]
     fn pcb_alias_candidates_cover_common_header_nets() {
-        assert_eq!(candidate_pcb_nets("D27"), vec!["D27", "/27", "/*27"]);
-        assert_eq!(candidate_pcb_nets("A10"), vec!["A10", "/A10"]);
+        assert_eq!(
+            candidate_pcb_nets(HostBoard::Mega2560Rev3, "D27"),
+            vec!["D27", "/27", "/*27", "PA5", "/PA5"]
+        );
+        assert_eq!(
+            candidate_pcb_nets(HostBoard::Mega2560Rev3, "A10"),
+            vec!["A10", "/A10", "PK2", "/PK2", "ADC10", "/ADC10"]
+        );
+        assert_eq!(
+            candidate_pcb_nets(HostBoard::NanoV3, "D13_SCK"),
+            vec![
+                "D13_SCK",
+                "/13",
+                "/*13",
+                "PB5",
+                "/PB5",
+                "D13/SCK",
+                "/D13/SCK",
+                "/D13{slash}SCK"
+            ]
+        );
     }
 
     #[test]
@@ -2381,7 +2747,7 @@ mod tests {
         let available = ["GPIO27".to_string(), "GPIO28".to_string()]
             .into_iter()
             .collect::<BTreeSet<_>>();
-        let suggestions = controller_signal_suggestions("D27", &available);
+        let suggestions = controller_signal_suggestions(HostBoard::Mega2560Rev3, "D27", &available);
         assert_eq!(
             suggestions
                 .first()
@@ -2396,7 +2762,7 @@ mod tests {
         let available = ["ADC10".to_string(), "ADC11".to_string()]
             .into_iter()
             .collect::<BTreeSet<_>>();
-        let suggestions = controller_signal_suggestions("A10", &available);
+        let suggestions = controller_signal_suggestions(HostBoard::Mega2560Rev3, "A10", &available);
         assert_eq!(
             suggestions
                 .first()
@@ -2404,6 +2770,43 @@ mod tests {
             Some("ADC10")
         );
         assert!(should_auto_apply_suggestion(&suggestions));
+    }
+
+    #[test]
+    fn controller_suggestions_can_match_official_mega_port_net_names() {
+        let available = ["/PA5".to_string(), "/PK2".to_string()]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let digital = controller_signal_suggestions(HostBoard::Mega2560Rev3, "D27", &available);
+        assert_eq!(
+            digital
+                .first()
+                .map(|suggestion| suggestion.net_name.as_str()),
+            Some("/PA5")
+        );
+        let analog = controller_signal_suggestions(HostBoard::Mega2560Rev3, "A10", &available);
+        assert_eq!(
+            analog
+                .first()
+                .map(|suggestion| suggestion.net_name.as_str()),
+            Some("/PK2")
+        );
+    }
+
+    #[test]
+    fn standard_controller_signal_labels_follow_board_preview_conventions() {
+        assert_eq!(
+            standard_controller_signal_label(HostBoard::Mega2560Rev3, "A11"),
+            "ADC11"
+        );
+        assert_eq!(
+            standard_controller_signal_label(HostBoard::Mega2560Rev3, "D30"),
+            "PC7"
+        );
+        assert_eq!(
+            standard_controller_signal_label(HostBoard::NanoV3, "D13_SCK"),
+            "D13/SCK"
+        );
     }
 
     #[test]
@@ -2538,6 +2941,103 @@ mod tests {
                 pcb_net: "/10".to_string(),
                 mode: BindingMode::Bus,
             }]
+        );
+    }
+
+    #[test]
+    fn host_board_preview_uses_preview_net_aliases_for_real_mega_board() {
+        let mut app = AvrSimGuiApp::default();
+        let preview_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../examples/pcbs/arduino_mega_2560_rev3e.kicad_pcb");
+        let preview = crate::pcb_view::LoadedPcb::load(&preview_path)
+            .expect("mega preview")
+            .simplified_preview();
+        app.bindings.insert(
+            "D31".to_string(),
+            rust_project::SignalBinding {
+                board_signal: "D31".to_string(),
+                pcb_net: "D31".to_string(),
+                mode: BindingMode::Digital,
+                note: None,
+            },
+        );
+        app.host_signal_levels.insert("D31".to_string(), 1);
+
+        let bindings = app.host_board_preview_bindings(HostBoard::Mega2560Rev3, &preview);
+        assert!(bindings
+            .iter()
+            .any(|binding| binding.board_signal == "D31" && binding.pcb_net == "PC6"));
+
+        let active = app.active_host_preview_nets(HostBoard::Mega2560Rev3, &preview);
+        assert!(active.contains("PC6"));
+    }
+
+    #[test]
+    fn host_board_preview_uses_preview_net_aliases_for_real_nano_board() {
+        let mut app = AvrSimGuiApp::default();
+        let preview_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../examples/pcbs/arduino_nano_v3_3.kicad_pcb");
+        let preview = crate::pcb_view::LoadedPcb::load(&preview_path)
+            .expect("nano preview")
+            .simplified_preview();
+        app.bindings.insert(
+            "D13_SCK".to_string(),
+            rust_project::SignalBinding {
+                board_signal: "D13_SCK".to_string(),
+                pcb_net: "/D13{slash}SCK".to_string(),
+                mode: BindingMode::Bus,
+                note: None,
+            },
+        );
+        app.host_signal_levels.insert("D13_SCK".to_string(), 1);
+
+        let bindings = app.host_board_preview_bindings(HostBoard::NanoV3, &preview);
+        assert!(bindings
+            .iter()
+            .any(|binding| binding.board_signal == "D13_SCK" && binding.pcb_net == "D13/SCK"));
+
+        let active = app.active_host_preview_nets(HostBoard::NanoV3, &preview);
+        assert!(active.contains("D13/SCK"));
+    }
+
+    #[test]
+    fn reconcile_controller_bindings_rebinds_stale_project_nets() {
+        let mut app = AvrSimGuiApp::default();
+        let board = load_built_in_board_model(HostBoard::Mega2560Rev3.builtin_board_model())
+            .expect("mega board");
+        app.loaded_pcb = Some(crate::pcb_view::LoadedPcb::preview(board));
+        app.bindings.insert(
+            "D22".to_string(),
+            rust_project::SignalBinding {
+                board_signal: "D22".to_string(),
+                pcb_net: "/22".to_string(),
+                mode: BindingMode::Digital,
+                note: Some("legacy".to_string()),
+            },
+        );
+        app.bindings.insert(
+            "A8".to_string(),
+            rust_project::SignalBinding {
+                board_signal: "A8".to_string(),
+                pcb_net: "/A8".to_string(),
+                mode: BindingMode::Analog,
+                note: Some("legacy".to_string()),
+            },
+        );
+
+        let (rebound, dropped) = app.reconcile_controller_bindings();
+        assert_eq!((rebound, dropped), (2, 2));
+        assert_eq!(
+            app.bindings
+                .get("D22")
+                .map(|binding| binding.pcb_net.as_str()),
+            Some("D22")
+        );
+        assert_eq!(
+            app.bindings
+                .get("A8")
+                .map(|binding| binding.pcb_net.as_str()),
+            Some("A8")
         );
     }
 
