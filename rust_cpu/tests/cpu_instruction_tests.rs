@@ -139,7 +139,7 @@ fn assert_flag(cpu: &Cpu<NullBus>, flag: u8, expected: bool) {
 }
 
 #[test]
-fn add_and_adc_flags_follow_python_reference_behavior() {
+fn add_and_adc_flags_follow_reference_behavior() {
     let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
     cpu.load_program_words(
         &[
@@ -169,7 +169,7 @@ fn add_and_adc_flags_follow_python_reference_behavior() {
 }
 
 #[test]
-fn stack_rcall_push_pop_and_ret_round_trip_matches_python() {
+fn stack_rcall_push_pop_and_ret_round_trip() {
     let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
     cpu.load_program_words(
         &[
@@ -197,7 +197,7 @@ fn stack_rcall_push_pop_and_ret_round_trip_matches_python() {
 }
 
 #[test]
-fn three_byte_pc_call_and_ret_match_python_mega2560_behavior() {
+fn three_byte_pc_call_and_ret_match_mega2560_behavior() {
     let mut cpu = Cpu::new(CpuConfig::atmega2560(), NullBus);
     let target = 0x10010u32;
     let (call0, call1) = call(target);
@@ -214,7 +214,7 @@ fn three_byte_pc_call_and_ret_match_python_mega2560_behavior() {
 }
 
 #[test]
-fn cpse_skips_two_word_instruction_like_python_reference() {
+fn cpse_skips_two_word_instruction() {
     let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
     let (jmp0, jmp1) = jmp(8);
     cpu.load_program_words(
@@ -238,7 +238,7 @@ fn cpse_skips_two_word_instruction_like_python_reference() {
 }
 
 #[test]
-fn x_and_y_addressing_modes_match_python_reference() {
+fn x_and_y_addressing_modes_match_reference_behavior() {
     let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
     cpu.load_program_words(
         &[
@@ -273,7 +273,7 @@ fn x_and_y_addressing_modes_match_python_reference() {
 }
 
 #[test]
-fn in_out_and_skip_bit_in_io_register_match_python_reference() {
+fn in_out_and_skip_bit_in_io_register_match_reference_behavior() {
     let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
     cpu.load_program_words(
         &[
@@ -299,7 +299,7 @@ fn in_out_and_skip_bit_in_io_register_match_python_reference() {
 }
 
 #[test]
-fn lpm_and_elpm_read_program_memory_bytes_like_python_reference() {
+fn lpm_and_elpm_read_program_memory_bytes() {
     let mut cpu = Cpu::new(CpuConfig::atmega2560(), NullBus);
     cpu.load_program_words(
         &[
@@ -328,7 +328,7 @@ fn lpm_and_elpm_read_program_memory_bytes_like_python_reference() {
 }
 
 #[test]
-fn flag_bit_instructions_and_bit_transfer_match_python_reference() {
+fn flag_bit_instructions_and_bit_transfer_match_reference_behavior() {
     let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
     cpu.load_program_words(
         &[
@@ -352,7 +352,7 @@ fn flag_bit_instructions_and_bit_transfer_match_python_reference() {
 }
 
 #[test]
-fn mul_and_fmul_write_r1_r0_and_flags_like_python_reference() {
+fn mul_and_fmul_write_r1_r0_and_flags_match_reference_behavior() {
     let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
     cpu.load_program_words(
         &[
@@ -377,7 +377,7 @@ fn mul_and_fmul_write_r1_r0_and_flags_like_python_reference() {
 }
 
 #[test]
-fn des_decodes_and_fails_explicitly_like_python_reference() {
+fn des_decodes_and_fails_explicitly() {
     let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
     cpu.load_program_words(&[des(0x03)], 0).unwrap();
     let instruction = cpu.decode_at(0).unwrap();

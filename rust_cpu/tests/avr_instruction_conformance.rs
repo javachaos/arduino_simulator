@@ -1,5 +1,5 @@
 use rust_cpu::cpu::{FLAG_C, FLAG_I, FLAG_Z};
-use rust_cpu::{Cpu, CpuConfig, CpuError, DataBus, NullBus, StepOutcome};
+use rust_cpu::{Cpu, CpuConfig, CpuError, DataBus, StepOutcome};
 
 fn ldi(d: u8, k: u8) -> u16 {
     0xE000 | (((k as u16) & 0xF0) << 4) | ((((d - 16) as u16) & 0x0F) << 4) | ((k as u16) & 0x0F)
@@ -110,7 +110,10 @@ fn product_word<B: DataBus>(cpu: &Cpu<B>) -> u16 {
 }
 
 fn run_z_sram_op(opcode: u16, initial_reg: u8, initial_memory: u8) -> (u8, u8) {
-    let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
+    let mut cpu = Cpu::new(
+        CpuConfig::atmega328p(),
+        AlwaysPendingInterruptBus { vector: 2 },
+    );
     let address = cpu.config.sram_start_address as u16;
     cpu.load_program_words(&[opcode, 0x9598], 0).unwrap();
     cpu.write_register(16, initial_reg).unwrap();
@@ -142,7 +145,10 @@ impl DataBus for AlwaysPendingInterruptBus {
 
 #[test]
 fn icall_pushes_return_and_resumes_the_caller() {
-    let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
+    let mut cpu = Cpu::new(
+        CpuConfig::atmega328p(),
+        AlwaysPendingInterruptBus { vector: 2 },
+    );
     cpu.load_program_words(&[0x9509, 0x9598, 0x0000, ldi(16, 0x77), 0x9508], 0)
         .unwrap();
     set_z(&mut cpu, 3);
@@ -155,7 +161,10 @@ fn icall_pushes_return_and_resumes_the_caller() {
 
 #[test]
 fn eijmp_uses_eind_on_large_devices() {
-    let mut cpu = Cpu::new(CpuConfig::atmega2560(), NullBus);
+    let mut cpu = Cpu::new(
+        CpuConfig::atmega2560(),
+        AlwaysPendingInterruptBus { vector: 2 },
+    );
     cpu.load_program_words(&[0x9419], 0).unwrap();
     cpu.set_program_word(0x10005, 0x9598).unwrap();
     cpu.write_data(cpu.config.eind_address.unwrap(), 0x01)
@@ -169,7 +178,10 @@ fn eijmp_uses_eind_on_large_devices() {
 
 #[test]
 fn elpm_reads_extended_program_space_and_updates_rampz_when_requested() {
-    let mut cpu = Cpu::new(CpuConfig::atmega2560(), NullBus);
+    let mut cpu = Cpu::new(
+        CpuConfig::atmega2560(),
+        AlwaysPendingInterruptBus { vector: 2 },
+    );
     cpu.load_program_words(&[0x95D8, elpm_postinc(17), elpm_direct(18), 0x9598], 0)
         .unwrap();
     cpu.load_program_bytes(&[0xAB, 0xCD], 0x10020).unwrap();
@@ -192,7 +204,10 @@ fn elpm_reads_extended_program_space_and_updates_rampz_when_requested() {
 
 #[test]
 fn ld_and_st_pointer_modes_update_x_correctly() {
-    let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
+    let mut cpu = Cpu::new(
+        CpuConfig::atmega328p(),
+        AlwaysPendingInterruptBus { vector: 2 },
+    );
     let sram_base = cpu.config.sram_start_address;
     cpu.load_program_words(
         &[ld_x_postinc(18), ldi(18, 0xA5), st_x_predec(18), 0x9598],
@@ -210,7 +225,10 @@ fn ld_and_st_pointer_modes_update_x_correctly() {
 
 #[test]
 fn ldd_and_std_use_displacement_without_mutating_y() {
-    let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
+    let mut cpu = Cpu::new(
+        CpuConfig::atmega328p(),
+        AlwaysPendingInterruptBus { vector: 2 },
+    );
     let sram_base = (cpu.config.sram_start_address + 0x20) as u16;
     cpu.load_program_words(&[ldd_y(19, 5), std_y(19, 6), 0x9598], 0)
         .unwrap();
@@ -233,7 +251,10 @@ fn xch_lac_las_and_lat_match_avr_sram_semantics() {
 
 #[test]
 fn xch_rejects_non_sram_addresses() {
-    let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
+    let mut cpu = Cpu::new(
+        CpuConfig::atmega328p(),
+        AlwaysPendingInterruptBus { vector: 2 },
+    );
     cpu.load_program_words(&[xch(16)], 0).unwrap();
     cpu.write_register(16, 0xAA).unwrap();
     set_z(&mut cpu, 0x005F);
@@ -249,7 +270,10 @@ fn xch_rejects_non_sram_addresses() {
 
 #[test]
 fn multiply_variants_produce_expected_products_and_flags() {
-    let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
+    let mut cpu = Cpu::new(
+        CpuConfig::atmega328p(),
+        AlwaysPendingInterruptBus { vector: 2 },
+    );
     cpu.load_program_words(
         &[mulsu(16, 17), fmul(16, 17), fmuls(16, 17), fmulsu(16, 17)],
         0,
