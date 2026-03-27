@@ -11,5 +11,7 @@ includes.cache
 
 *.gcov
 *.rpt
+*.profdata
+*.profraw
 
 examples/pcbs/.history/
