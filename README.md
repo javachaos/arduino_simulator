@@ -2,6 +2,8 @@
 
 `arduino_simulator` is a standalone AVR simulation and board-tooling workspace.
 
+https://javachaos.github.io/arduino_simulator/
+
 ## License
 
 This workspace is licensed under the GNU General Public License, version 3
