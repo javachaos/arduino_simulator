@@ -2684,6 +2684,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust_kicad"
+version = "0.1.0"
+dependencies = [
+ "rust_board",
+ "rust_project",
+ "tempfile",
+]
+
+[[package]]
 name = "rust_mcu"
 version = "0.1.0"
 dependencies = [

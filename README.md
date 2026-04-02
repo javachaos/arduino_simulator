@@ -25,6 +25,10 @@ The workspace is now split cleanly by responsibility:
   Native CLI for running Mega/Nano firmware from Intel HEX
 - `rust_gui/`
   Native desktop GUI for compile/load/run plus CPU and serial inspection
+- `rust_kicad/`
+  Native KiCad adapter for generating/syncing `.avrsim.json` projects from KiCad PCBs
+- `kicad_plugin/`
+  Thin KiCad PCB action plugin that launches the Rust KiCad adapter from inside PCB Editor
 
 The checked-in workspace is Rust-only. Board parsing, built-in models, layout
 geometry, and document formats now live in the Rust crates.
@@ -83,6 +87,25 @@ same Arduino-facing signal names where possible, such as `D22`, `D50_MISO`, or
 `A10`, or the official MCU-port names used by that board design, such as
 `PA0`, `PC6`, or `PK2` on a Mega 2560.
 
+## KiCad Plugin
+
+If you want one-click launch behavior from KiCad PCB Editor, install the action
+plugin:
+
+```sh
+python3 /Users/fred/Documents/arduino_simulator/kicad_plugin/install_kicad_plugin.py
+```
+
+Then use:
+
+- `Tools -> External Plugins -> Open Arduino Simulator`
+
+The plugin now offers:
+
+- `Generic PCB mode` for opening any KiCad board directly in the GUI
+- `Arduino simulation project` mode for `.avrsim.json` generation, firmware,
+  and host-board binding workflows
+
 ## Rust Workspace
 
 Run the native test suites from the workspace root:
@@ -94,6 +117,7 @@ cargo test -p rust_board
 cargo test -p rust_project
 cargo test -p rust_runtime
 cargo test -p rust_gui
+cargo test -p rust_kicad
 ```
 
 Or run everything:

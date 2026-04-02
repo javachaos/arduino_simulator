@@ -1,4 +1,5 @@
 pub mod assembly_bundle;
+pub mod autobind;
 pub mod behavior_definition;
 pub mod definitions;
 pub mod document;
@@ -8,6 +9,11 @@ pub mod shared;
 pub mod simulation_project;
 
 pub use assembly_bundle::{AssemblyBundle, AssemblyMember, AssemblyMemberKind};
+pub use autobind::{
+    auto_bind_host_board, controller_signal_suggestions, default_project_name,
+    host_signals_for_board, infer_binding_mode, inferred_host_board_from_source,
+    sync_host_board_bindings, NetSuggestion,
+};
 pub use behavior_definition::{
     BehaviorDefinition, BehaviorEngine, BehaviorPortBinding, BehaviorValue,
 };
