@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import platform
 import shutil
@@ -48,6 +49,8 @@ def discover_workspace_root(start: str | Path) -> Path | None:
 def resolve_runtime_environment(plugin_file: str | Path) -> RuntimeEnvironment:
     plugin_root = plugin_root_from_plugin_file(plugin_file)
     bundled = bundled_adapter_binary(plugin_root) is not None
+    if bundled:
+        ensure_bundled_binaries_executable(plugin_root)
     workspace_root = discover_workspace_root(plugin_root)
     working_directory = workspace_root or plugin_root
     return RuntimeEnvironment(
@@ -138,12 +141,51 @@ def bundled_adapter_binary(plugin_root: str | Path) -> Path | None:
     return None
 
 
+def ensure_executable(path: str | Path) -> Path:
+    path = Path(path)
+    if platform.system().lower().startswith('win') or not path.is_file():
+        return path
+
+    mode = path.stat().st_mode
+    desired_mode = mode
+
+    if mode & 0o400:
+        desired_mode |= 0o100
+    if mode & 0o040:
+        desired_mode |= 0o010
+    if mode & 0o004:
+        desired_mode |= 0o001
+
+    desired_mode |= 0o100
+
+    if desired_mode != mode:
+        path.chmod(desired_mode)
+
+    return path
+
+
+def ensure_bundled_binaries_executable(plugin_root: str | Path) -> None:
+    if platform.system().lower().startswith('win'):
+        return
+
+    binary_dir = bundled_binary_dir(plugin_root)
+    if binary_dir is None:
+        return
+
+    for basename in (ADAPTER_BASENAME, GUI_BASENAME):
+        for executable in executable_candidates(basename):
+            candidate = binary_dir / executable
+            if candidate.is_file():
+                ensure_executable(candidate)
+
+
 def adapter_base_command(base_root: str | Path) -> list[str]:
     base_root = Path(base_root).resolve()
+    ensure_bundled_binaries_executable(base_root)
 
     bundled = bundled_adapter_binary(base_root)
     if bundled is not None:
-        return [str(bundled)]
+        return [str(ensure_executable(bundled))]
 
     workspace_root = discover_workspace_root(base_root)
     if workspace_root is not None:

@@ -30,6 +30,10 @@ PACKAGE_DESCRIPTION_FULL = (
 ADAPTER_BASENAME = "arduino-simulator-kicad"
 GUI_BASENAME = "arduino-simulator-gui"
 DEFAULT_BINARY_ROOT = Path("dist/binaries")
+PREVIEW_PCB_FILES = (
+    "arduino_mega_2560_rev3e.kicad_pcb",
+    "arduino_nano_v3_3.kicad_pcb",
+)
 RUST_TARGET_TO_PLATFORM_TAG = {
     "x86_64-unknown-linux-gnu": "linux-x86_64",
     "aarch64-unknown-linux-gnu": "linux-arm64",
@@ -45,6 +49,28 @@ class BinarySet:
     platform_tag: str
     adapter_binary: Path
     gui_binary: Path
+
+
+def ensure_unix_executable(path: Path) -> Path:
+    if platform.system().lower().startswith("win"):
+        return path
+
+    mode = path.stat().st_mode
+    desired_mode = mode
+
+    if mode & 0o400:
+        desired_mode |= 0o100
+    if mode & 0o040:
+        desired_mode |= 0o010
+    if mode & 0o004:
+        desired_mode |= 0o001
+
+    desired_mode |= 0o100
+
+    if desired_mode != mode:
+        path.chmod(desired_mode)
+
+    return path
 
 
 def repo_root() -> Path:
@@ -282,6 +308,7 @@ def build_package(
     stage_root = dist_root / "package"
     manual_root = dist_root / "manual" / PLUGIN_NAME
     plugin_source = workspace_root / "kicad_plugin" / PLUGIN_NAME
+    preview_pcb_source = workspace_root / "examples" / "pcbs"
 
     if not skip_build:
         build_release_binaries(workspace_root)
@@ -308,16 +335,35 @@ def build_package(
         shutil.copy2(plugin_source / file_name, stage_root / "plugins" / file_name)
         shutil.copy2(plugin_source / file_name, manual_root / file_name)
 
+    stage_preview_root = stage_root / "plugins" / "board-previews"
+    manual_preview_root = manual_root / "board-previews"
+    stage_preview_root.mkdir(parents=True, exist_ok=True)
+    manual_preview_root.mkdir(parents=True, exist_ok=True)
+    for file_name in PREVIEW_PCB_FILES:
+        source = preview_pcb_source / file_name
+        if not source.is_file():
+            raise FileNotFoundError(f"missing preview PCB source file: {source}")
+        shutil.copy2(source, stage_preview_root / file_name)
+        shutil.copy2(source, manual_preview_root / file_name)
+
     for platform_tag, binary_set in selected.items():
         stage_bin = stage_root / "plugins" / "bin" / platform_tag
         stage_bin.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(binary_set.adapter_binary, stage_bin / binary_set.adapter_binary.name)
-        shutil.copy2(binary_set.gui_binary, stage_bin / binary_set.gui_binary.name)
+        stage_adapter = stage_bin / binary_set.adapter_binary.name
+        stage_gui = stage_bin / binary_set.gui_binary.name
+        shutil.copy2(binary_set.adapter_binary, stage_adapter)
+        shutil.copy2(binary_set.gui_binary, stage_gui)
+        ensure_unix_executable(stage_adapter)
+        ensure_unix_executable(stage_gui)
 
         manual_bin = manual_root / "bin" / platform_tag
         manual_bin.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(binary_set.adapter_binary, manual_bin / binary_set.adapter_binary.name)
-        shutil.copy2(binary_set.gui_binary, manual_bin / binary_set.gui_binary.name)
+        manual_adapter = manual_bin / binary_set.adapter_binary.name
+        manual_gui = manual_bin / binary_set.gui_binary.name
+        shutil.copy2(binary_set.adapter_binary, manual_adapter)
+        shutil.copy2(binary_set.gui_binary, manual_gui)
+        ensure_unix_executable(manual_adapter)
+        ensure_unix_executable(manual_gui)
 
     solid_png(stage_root / "resources" / "icon.png", 64, 64, (44, 117, 255))
     solid_png(manual_root / "icon_24x24.png", 24, 24, (44, 117, 255))

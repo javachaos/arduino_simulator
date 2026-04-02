@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -40,8 +41,16 @@ class CoreTests(unittest.TestCase):
             bundled = plugin_root / "bin" / current_platform_tag() / "arduino-simulator-kicad"
             bundled.parent.mkdir(parents=True)
             bundled.write_text("", encoding="utf-8")
+            gui = bundled.parent / "arduino-simulator-gui"
+            gui.write_text("", encoding="utf-8")
+            if os.name != "nt":
+                bundled.chmod(0o644)
+                gui.chmod(0o644)
             command = adapter_base_command(plugin_root)
             self.assertEqual(command, [str(bundled.resolve())])
+            if os.name != "nt":
+                self.assertTrue(os.access(bundled, os.X_OK))
+                self.assertTrue(os.access(gui, os.X_OK))
 
     def test_discover_workspace_root_searches_ancestors(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
