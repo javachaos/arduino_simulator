@@ -148,18 +148,19 @@ jobs:
           path: release-assets
 
       - name: Show release assets
-        run: find release-assets -maxdepth 3 -type f | sort
+        shell: bash
+        run: find release-assets -maxdepth 4 -type f | sort
 
       - name: Publish GitHub release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          shopt -s nullglob
           tag="${GITHUB_REF_NAME}"
-          assets=(
-            release-assets/dist/*.zip
-            release-assets/dist/BUNDLED_PLATFORMS.txt
-            release-assets/dist/SHA256SUMS.txt
+          mapfile -t assets < <(
+            find release-assets -type f \
+              \( -name '*.zip' -o -name 'BUNDLED_PLATFORMS.txt' -o -name 'SHA256SUMS.txt' \) \
+              | sort
           )
           if [ "${#assets[@]}" -eq 0 ]; then
             echo "No release assets found." >&2
