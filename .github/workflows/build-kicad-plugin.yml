@@ -1,0 +1,173 @@
+name: build-kicad-plugin
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/build-kicad-plugin.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "kicad_plugin/**"
+      - "rust_behavior/**"
+      - "rust_board/**"
+      - "rust_cpu/**"
+      - "rust_gui/**"
+      - "rust_kicad/**"
+      - "rust_mcu/**"
+      - "rust_project/**"
+      - "rust_runtime/**"
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+    paths:
+      - ".github/workflows/build-kicad-plugin.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "kicad_plugin/**"
+      - "rust_behavior/**"
+      - "rust_board/**"
+      - "rust_cpu/**"
+      - "rust_gui/**"
+      - "rust_kicad/**"
+      - "rust_mcu/**"
+      - "rust_project/**"
+      - "rust_runtime/**"
+
+jobs:
+  build-binaries:
+    name: build-${{ matrix.platform_tag }}
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform_tag: linux-x86_64
+            runs_on: ubuntu-24.04
+          - platform_tag: linux-arm64
+            runs_on: ubuntu-24.04-arm
+          - platform_tag: windows-x86_64
+            runs_on: windows-2025
+          - platform_tag: windows-arm64
+            runs_on: windows-11-arm
+          - platform_tag: macos-arm64
+            runs_on: macos-15
+          - platform_tag: macos-x86_64
+            runs_on: macos-15-intel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Show preinstalled toolchain versions
+        run: |
+          cargo --version
+          rustc --version
+          python --version
+
+      - name: Install Linux GUI build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libasound2-dev \
+            libudev-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev
+
+      - name: Build release binaries
+        run: cargo build --release -p rust_gui -p rust_kicad
+
+      - name: Collect normalized platform binaries
+        shell: bash
+        run: >
+          python kicad_plugin/collect_binaries.py
+          --platform-tag "${{ matrix.platform_tag }}"
+          --release-root target/release
+          --out-root dist/binaries
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform_tag }}
+          path: dist/binaries/${{ matrix.platform_tag }}
+          if-no-files-found: error
+
+  package:
+    name: package-kicad-plugin
+    needs: build-binaries
+    if: needs.build-binaries.result == 'success'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/binaries
+
+      - name: Build multi-platform KiCad bundle
+        run: python kicad_plugin/build_dist.py --skip-build --binary-root dist/binaries
+
+      - name: Generate release checksums
+        run: sha256sum dist/*.zip > dist/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kicad-plugin-bundle
+          path: |
+            dist/*.zip
+            dist/BUNDLED_PLATFORMS.txt
+            dist/SHA256SUMS.txt
+            dist/manual/**
+          if-no-files-found: error
+
+  release:
+    name: publish-release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v') && needs.package.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: kicad-plugin-bundle
+          path: release-assets
+
+      - name: Show release assets
+        run: find release-assets -maxdepth 3 -type f | sort
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          tag="${GITHUB_REF_NAME}"
+          assets=(
+            release-assets/dist/*.zip
+            release-assets/dist/BUNDLED_PLATFORMS.txt
+            release-assets/dist/SHA256SUMS.txt
+          )
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release assets found." >&2
+            exit 1
+          fi
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --clobber
+          else
+            gh release create "$tag" "${assets[@]}" --verify-tag --generate-notes
+          fi

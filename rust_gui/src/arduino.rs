@@ -81,8 +81,9 @@ struct CompilePlan {
 pub fn compile_ino(path: &Path, board: HostBoard) -> Result<CompileArtifact, ArduinoCliError> {
     let plan = resolve_compile_plan(path, board)?;
     fs::create_dir_all(&plan.build_path)?;
+    let cli = resolve_arduino_cli_executable();
 
-    let output = Command::new("arduino-cli")
+    let output = Command::new(&cli)
         .arg("compile")
         .arg("--fqbn")
         .arg(plan.board.fqbn())
@@ -117,6 +118,47 @@ pub fn compile_ino(path: &Path, board: HostBoard) -> Result<CompileArtifact, Ard
         stdout,
         stderr,
     })
+}
+
+fn resolve_arduino_cli_executable() -> PathBuf {
+    if let Some(value) = std::env::var_os("ARDUINO_CLI") {
+        let candidate = PathBuf::from(value);
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+
+    if let Some(path) = lookup_command_on_path("arduino-cli") {
+        return path;
+    }
+
+    let mut candidates = vec![
+        PathBuf::from("/opt/homebrew/bin/arduino-cli"),
+        PathBuf::from("/usr/local/bin/arduino-cli"),
+    ];
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        candidates.push(home.join(".cargo/bin/arduino-cli"));
+        candidates.push(home.join(".local/bin/arduino-cli"));
+    }
+
+    for candidate in candidates {
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+
+    PathBuf::from("arduino-cli")
+}
+
+fn lookup_command_on_path(command: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for directory in std::env::split_paths(&path) {
+        let candidate = directory.join(command);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 fn resolve_compile_plan(path: &Path, board: HostBoard) -> Result<CompilePlan, ArduinoCliError> {
@@ -223,7 +265,10 @@ mod tests {
 
     use rust_project::HostBoard;
 
-    use super::{find_hex_output, resolve_compile_plan, sanitize_name, ArduinoCliError};
+    use super::{
+        find_hex_output, lookup_command_on_path, resolve_arduino_cli_executable,
+        resolve_compile_plan, sanitize_name, ArduinoCliError,
+    };
 
     #[test]
     fn resolve_compile_plan_accepts_ino_file() {
@@ -335,5 +380,43 @@ mod tests {
         assert!(failed
             .to_string()
             .contains("arduino-cli compile failed\nstdout:\nbuild output\n\nstderr:\nbad exit"));
+    }
+
+    #[test]
+    fn command_lookup_checks_path_entries() {
+        let temp = tempdir().expect("tempdir");
+        let bin = temp.path().join("bin");
+        fs::create_dir_all(&bin).expect("mkdir");
+        let cli = bin.join("arduino-cli");
+        fs::write(&cli, "#!/bin/sh\n").expect("write");
+
+        let original_path = std::env::var_os("PATH");
+        std::env::set_var("PATH", bin.as_os_str());
+        let found = lookup_command_on_path("arduino-cli");
+        if let Some(path) = original_path {
+            std::env::set_var("PATH", path);
+        } else {
+            std::env::remove_var("PATH");
+        }
+
+        assert_eq!(found, Some(cli));
+    }
+
+    #[test]
+    fn arduino_cli_resolution_prefers_explicit_environment_override() {
+        let temp = tempdir().expect("tempdir");
+        let cli = temp.path().join("arduino-cli");
+        fs::write(&cli, "#!/bin/sh\n").expect("write");
+
+        let previous = std::env::var_os("ARDUINO_CLI");
+        std::env::set_var("ARDUINO_CLI", &cli);
+        let resolved = resolve_arduino_cli_executable();
+        if let Some(value) = previous {
+            std::env::set_var("ARDUINO_CLI", value);
+        } else {
+            std::env::remove_var("ARDUINO_CLI");
+        }
+
+        assert_eq!(resolved, cli);
     }
 }

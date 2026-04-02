@@ -1,5 +1,5 @@
 [workspace]
-members = ["rust_cpu", "rust_mcu", "rust_runtime", "rust_gui", "rust_web", "rust_board", "rust_project", "rust_behavior"]
+members = ["rust_cpu", "rust_mcu", "rust_runtime", "rust_gui", "rust_web", "rust_board", "rust_project", "rust_behavior", "rust_kicad"]
 resolver = "2"
 
 [workspace.package]

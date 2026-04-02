@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::pcb_view::{render_pcb, LoadedPcb};
@@ -54,6 +56,12 @@ struct ModuleSignalSuggestion {
     suggestion: NetSuggestion,
 }
 
+struct PendingPcbLoad {
+    path: PathBuf,
+    auto_wire: bool,
+    rx: Receiver<Result<LoadedPcb, String>>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum NumericHintKind {
     Unknown,
@@ -71,6 +79,7 @@ pub struct AvrSimGuiApp {
     pcb_path: String,
     project_notice: String,
     loaded_pcb: Option<LoadedPcb>,
+    pending_pcb_load: Option<PendingPcbLoad>,
     bindings: BTreeMap<String, SignalBinding>,
     module_overlays: Vec<ModuleOverlay>,
     project_probes: Vec<ProbeSpec>,
@@ -105,6 +114,7 @@ impl Default for AvrSimGuiApp {
             pcb_path: String::new(),
             project_notice: String::new(),
             loaded_pcb: None,
+            pending_pcb_load: None,
             bindings: BTreeMap::new(),
             module_overlays: Vec::new(),
             project_probes: Vec::new(),
@@ -127,6 +137,25 @@ impl Default for AvrSimGuiApp {
     }
 }
 
+impl AvrSimGuiApp {
+    pub fn from_project_path(path: &Path) -> Self {
+        let mut app = Self::default();
+        app.load_project_file(path);
+        app.autoload_runtime_from_project_source();
+        app
+    }
+
+    pub fn from_pcb_path(path: &Path, selected_board: Option<HostBoard>) -> Self {
+        let mut app = Self::default();
+        if let Some(board) = selected_board {
+            app.selected_board = board;
+        }
+        app.project_name = default_project_name("", &path.display().to_string());
+        app.begin_pcb_load(path, false);
+        app
+    }
+}
+
 impl eframe::App for AvrSimGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.style_mut(|style| {
@@ -134,6 +163,7 @@ impl eframe::App for AvrSimGuiApp {
             style.interaction.tooltip_delay = 0.05;
             style.interaction.tooltip_grace_time = 0.4;
         });
+        self.poll_pending_pcb_load();
         self.refresh_snapshot();
         ctx.request_repaint_after(Duration::from_millis(16));
 
@@ -654,40 +684,7 @@ impl AvrSimGuiApp {
             self.project_notice = "Select a .kicad_pcb file first.".to_string();
             return;
         }
-        match LoadedPcb::load(path) {
-            Ok(loaded) => {
-                self.pcb_path = path.display().to_string();
-                self.loaded_pcb = Some(loaded);
-                if auto_wire {
-                    let controller_bound = self.auto_bind_common_aliases(true);
-                    let module_bound = self.auto_wire_all_modules();
-                    self.project_notice = format!(
-                        "Loaded PCB {} and auto-wired {controller_bound} controller pin(s) plus {module_bound} module signal(s).",
-                        path.display()
-                    );
-                } else {
-                    let (rebound, dropped) = self.reconcile_controller_bindings();
-                    let module_bound = self.auto_wire_all_modules();
-                    if rebound > 0 || dropped > 0 {
-                        self.project_notice = format!(
-                            "Loaded PCB {} and refreshed {} controller binding(s) after dropping {dropped} stale net reference(s); rewired {module_bound} module signal(s).",
-                            path.display(),
-                            rebound,
-                        );
-                    } else {
-                        self.project_notice = format!(
-                            "Loaded PCB {} with {} controller binding(s) and rewired {module_bound} module signal(s).",
-                            path.display(),
-                            self.bindings.len(),
-                        );
-                    }
-                }
-            }
-            Err(error) => {
-                self.loaded_pcb = None;
-                self.project_notice = format!("PCB load failed: {error}");
-            }
-        }
+        self.begin_pcb_load(path, auto_wire);
     }
 
     fn draw_wiring_panel(&mut self, ui: &mut egui::Ui) {
@@ -1386,6 +1383,114 @@ impl AvrSimGuiApp {
             }
             Err(error) => {
                 self.project_notice = format!("Open failed: {error}");
+            }
+        }
+    }
+
+    fn autoload_runtime_from_project_source(&mut self) {
+        let path = PathBuf::from(self.source_path.trim());
+        if path.as_os_str().is_empty() {
+            return;
+        }
+
+        match classify_source(&self.source_path) {
+            SourceAction::Compile => {
+                self.controller
+                    .compile_and_load(path.clone(), self.selected_board);
+                self.project_notice = format!(
+                    "Loaded project and compiling {} for {}.",
+                    path.display(),
+                    self.selected_board.label()
+                );
+            }
+            SourceAction::LoadHex => {
+                self.controller.load_hex(path.clone(), self.selected_board);
+                self.project_notice = format!(
+                    "Loaded project and opening {} for {}.",
+                    path.display(),
+                    self.selected_board.label()
+                );
+            }
+            SourceAction::None => {}
+        }
+    }
+
+    fn begin_pcb_load(&mut self, path: &Path, auto_wire: bool) {
+        let path = path.to_path_buf();
+        self.pcb_path = path.display().to_string();
+        self.loaded_pcb = None;
+        self.project_notice = format!("Loading PCB {}...", path.display());
+
+        let (tx, rx) = mpsc::channel();
+        let thread_path = path.clone();
+        thread::spawn(move || {
+            let _ = tx.send(LoadedPcb::load(&thread_path));
+        });
+
+        self.pending_pcb_load = Some(PendingPcbLoad {
+            path,
+            auto_wire,
+            rx,
+        });
+    }
+
+    fn poll_pending_pcb_load(&mut self) {
+        let result = match self.pending_pcb_load.as_ref() {
+            Some(pending) => match pending.rx.try_recv() {
+                Ok(result) => Some(Ok((pending.path.clone(), pending.auto_wire, result))),
+                Err(TryRecvError::Empty) => None,
+                Err(TryRecvError::Disconnected) => {
+                    Some(Err("PCB loader thread disconnected unexpectedly.".to_string()))
+                }
+            },
+            None => None,
+        };
+
+        let Some(result) = result else {
+            return;
+        };
+        self.pending_pcb_load = None;
+
+        match result {
+            Ok((path, auto_wire, Ok(loaded))) => {
+                self.finish_loaded_pcb(path, loaded, auto_wire);
+            }
+            Ok((_path, _auto_wire, Err(error))) => {
+                self.loaded_pcb = None;
+                self.project_notice = format!("PCB load failed: {error}");
+            }
+            Err(error) => {
+                self.loaded_pcb = None;
+                self.project_notice = format!("PCB load failed: {error}");
+            }
+        }
+    }
+
+    fn finish_loaded_pcb(&mut self, path: PathBuf, loaded: LoadedPcb, auto_wire: bool) {
+        self.pcb_path = path.display().to_string();
+        self.loaded_pcb = Some(loaded);
+        if auto_wire {
+            let controller_bound = self.auto_bind_common_aliases(true);
+            let module_bound = self.auto_wire_all_modules();
+            self.project_notice = format!(
+                "Loaded PCB {} and auto-wired {controller_bound} controller pin(s) plus {module_bound} module signal(s).",
+                path.display()
+            );
+        } else {
+            let (rebound, dropped) = self.reconcile_controller_bindings();
+            let module_bound = self.auto_wire_all_modules();
+            if rebound > 0 || dropped > 0 {
+                self.project_notice = format!(
+                    "Loaded PCB {} and refreshed {} controller binding(s) after dropping {dropped} stale net reference(s); rewired {module_bound} module signal(s).",
+                    path.display(),
+                    rebound,
+                );
+            } else {
+                self.project_notice = format!(
+                    "Loaded PCB {} with {} controller binding(s) and rewired {module_bound} module signal(s).",
+                    path.display(),
+                    self.bindings.len(),
+                );
             }
         }
     }

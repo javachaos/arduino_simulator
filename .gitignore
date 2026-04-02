@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 
 target/
+dist/
 
 core/
 build.options.json
