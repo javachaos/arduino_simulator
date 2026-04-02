@@ -74,6 +74,7 @@ pub struct AvrSimGuiApp {
     project_notice: String,
     loaded_pcb: Option<LoadedPcb>,
     pending_pcb_load: Option<PendingPcbLoad>,
+    defer_runtime_autoload_until_pcb_ready: bool,
     bindings: BTreeMap<String, SignalBinding>,
     module_overlays: Vec<ModuleOverlay>,
     project_probes: Vec<ProbeSpec>,
@@ -108,6 +109,7 @@ impl Default for AvrSimGuiApp {
             project_notice: String::new(),
             loaded_pcb: None,
             pending_pcb_load: None,
+            defer_runtime_autoload_until_pcb_ready: false,
             bindings: BTreeMap::new(),
             module_overlays: Vec::new(),
             project_probes: Vec::new(),
@@ -133,7 +135,11 @@ impl AvrSimGuiApp {
     pub fn from_project_path(path: &Path) -> Self {
         let mut app = Self::default();
         app.load_project_file(path);
-        app.autoload_runtime_from_project_source();
+        if app.pending_pcb_load.is_some() {
+            app.defer_runtime_autoload_until_pcb_ready = true;
+        } else {
+            app.autoload_runtime_from_project_source();
+        }
         app
     }
 
@@ -156,6 +162,7 @@ impl eframe::App for AvrSimGuiApp {
             style.interaction.tooltip_grace_time = 0.4;
         });
         self.poll_pending_pcb_load();
+        self.maybe_autoload_runtime_after_pcb_ready();
         self.refresh_snapshot();
         ctx.request_repaint_after(Duration::from_millis(16));
 
@@ -664,8 +671,17 @@ impl AvrSimGuiApp {
     fn update_host_signal_activity(&mut self, snapshot: &SimulationSnapshot) {
         let now = Instant::now();
         let next_levels = host_signal_levels_for_snapshot(snapshot);
+        for signal in host_signal_recent_activity_for_snapshot(snapshot) {
+            self.host_signal_flash_until
+                .insert(signal, now + Duration::from_millis(240));
+        }
         for (signal, level) in &next_levels {
-            if self.host_signal_levels.get(signal).copied().unwrap_or(0) != *level {
+            let changed = self
+                .host_signal_levels
+                .get(signal)
+                .map(|previous| *previous != *level)
+                .unwrap_or(*level != 0);
+            if changed {
                 self.host_signal_flash_until
                     .insert(signal.clone(), now + Duration::from_millis(240));
             }
@@ -1281,6 +1297,14 @@ impl AvrSimGuiApp {
             }
             SourceAction::None => {}
         }
+    }
+
+    fn maybe_autoload_runtime_after_pcb_ready(&mut self) {
+        if !self.defer_runtime_autoload_until_pcb_ready || self.pending_pcb_load.is_some() {
+            return;
+        }
+        self.defer_runtime_autoload_until_pcb_ready = false;
+        self.autoload_runtime_from_project_source();
     }
 
     fn begin_pcb_load(&mut self, path: &Path, auto_wire: bool) {
@@ -2597,6 +2621,16 @@ fn host_signal_levels_for_snapshot(snapshot: &SimulationSnapshot) -> BTreeMap<St
     levels
 }
 
+fn host_signal_recent_activity_for_snapshot(snapshot: &SimulationSnapshot) -> BTreeSet<String> {
+    let mut signals = BTreeSet::new();
+    for entry in &snapshot.host_pin_recent_activity {
+        for signal in host_signal_names(snapshot.board, entry.pin) {
+            signals.insert(signal.to_string());
+        }
+    }
+    signals
+}
+
 fn host_signal_names(board: HostBoard, pin: BoardPin) -> &'static [&'static str] {
     match board {
         HostBoard::NanoV3 => nano_host_signal_names(pin),
@@ -2734,12 +2768,13 @@ mod tests {
         bundled_preview_pcb_candidates_from_exe, candidate_pcb_nets, classify_source,
         common_baud_rates, connectable_pin_indicator_color, controller_signal_suggestions,
         default_project_name, display_stem_for_path, displayed_host_board,
-        host_signal_levels_for_snapshot, host_signal_names, infer_binding_mode,
+        host_signal_levels_for_snapshot, host_signal_names,
+        host_signal_recent_activity_for_snapshot, infer_binding_mode,
         inferred_host_board_from_source, module_model_title, module_signal_aliases,
         module_signal_suggestions, normalize_binding_net_list, sanitize_project_name,
-        should_auto_apply_suggestion, split_binding_net_list,
-        standard_controller_signal_label, target_runtime_board_mismatch, AvrSimGuiApp,
-        ControllerConnection, SignalActivity, SourceAction,
+        should_auto_apply_suggestion, split_binding_net_list, standard_controller_signal_label,
+        target_runtime_board_mismatch, AvrSimGuiApp, ControllerConnection, SignalActivity,
+        SourceAction,
     };
     use crate::simulation::{SimulationSnapshot, SimulatorStatus};
 
@@ -3022,6 +3057,54 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_recent_host_pin_activity_expands_to_named_host_signals() {
+        let mut snapshot = SimulationSnapshot::default();
+        snapshot.board = HostBoard::NanoV3;
+        snapshot.host_pin_recent_activity = vec![
+            BoardPinLevel {
+                pin: BoardPin::Digital(13),
+                level: 1,
+            },
+            BoardPinLevel {
+                pin: BoardPin::Analog(4),
+                level: 1,
+            },
+        ];
+
+        let signals = host_signal_recent_activity_for_snapshot(&snapshot);
+        assert!(signals.contains("D13_SCK"));
+        assert!(signals.contains("D13"));
+        assert!(signals.contains("A4_SDA"));
+        assert!(signals.contains("A4"));
+    }
+
+    #[test]
+    fn host_signal_activity_flashes_recent_low_pulses_without_flashing_initial_lows() {
+        let mut app = AvrSimGuiApp::default();
+
+        let mut idle_snapshot = SimulationSnapshot::default();
+        idle_snapshot.board = HostBoard::NanoV3;
+        idle_snapshot.host_pin_levels = vec![BoardPinLevel {
+            pin: BoardPin::Digital(13),
+            level: 0,
+        }];
+        app.update_host_signal_activity(&idle_snapshot);
+        assert!(app.host_signal_flash_until.is_empty());
+
+        let mut pulse_snapshot = idle_snapshot.clone();
+        pulse_snapshot.host_pin_recent_activity = vec![BoardPinLevel {
+            pin: BoardPin::Digital(13),
+            level: 1,
+        }];
+        app.update_host_signal_activity(&pulse_snapshot);
+
+        assert!(app.host_signal_flash_until.contains_key("D13_SCK"));
+        assert!(app.host_signal_flash_until.contains_key("D13"));
+        assert_eq!(app.host_signal_levels.get("D13_SCK"), Some(&0));
+        assert_eq!(app.host_signal_levels.get("D13"), Some(&0));
+    }
+
+    #[test]
     fn connectable_pin_indicator_prefers_flash_over_steady_high() {
         let flashing = connectable_pin_indicator_color(
             SignalActivity {
@@ -3206,6 +3289,18 @@ mod tests {
                 .map(|binding| binding.pcb_net.as_str()),
             Some("A8")
         );
+    }
+
+    #[test]
+    fn project_startup_defers_runtime_autoload_until_pcb_is_ready() {
+        let project_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/Example-Simulation.avrsim.json");
+
+        let app = AvrSimGuiApp::from_project_path(&project_path);
+
+        assert!(app.pending_pcb_load.is_some());
+        assert!(app.defer_runtime_autoload_until_pcb_ready);
+        assert!(app.snapshot.firmware_path.is_none());
     }
 
     #[test]

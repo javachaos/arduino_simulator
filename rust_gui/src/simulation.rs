@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -7,7 +7,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use rust_cpu::{Cpu, DataBus, DecodedInstruction};
-use rust_mcu::BoardPinLevel;
+use rust_mcu::{BoardPin, BoardPinLevel};
 use rust_project::HostBoard;
 use rust_runtime::{load_hex_file, MegaRuntime, NanoRuntime, RuntimeExit};
 
@@ -15,6 +15,7 @@ use crate::arduino::compile_ino;
 
 const RUN_CHUNK_SIZE: usize = 20_000;
 const SNAPSHOT_INTERVAL_MS: u64 = 33;
+const HOST_PIN_ACTIVITY_HOLD_MS: u64 = 240;
 const IDLE_POLL_MS: u64 = 10;
 const SERIAL_TAIL_BYTES: usize = 64 * 1024;
 const UART_BITS_PER_FRAME: u64 = 10;
@@ -69,6 +70,7 @@ pub struct SimulationSnapshot {
     pub registers: [u8; 32],
     pub extra_lines: Vec<String>,
     pub host_pin_levels: Vec<BoardPinLevel>,
+    pub host_pin_recent_activity: Vec<BoardPinLevel>,
 }
 
 impl Default for SimulationSnapshot {
@@ -93,6 +95,7 @@ impl Default for SimulationSnapshot {
             registers: [0u8; 32],
             extra_lines: Vec::new(),
             host_pin_levels: Vec::new(),
+            host_pin_recent_activity: Vec::new(),
         }
     }
 }
@@ -239,6 +242,9 @@ struct WorkerState {
     status_message: String,
     status: SimulatorStatus,
     pending_serial: VecDeque<PendingSerialInjection>,
+    last_host_pin_levels: Vec<BoardPinLevel>,
+    host_pin_activity_until: HashMap<BoardPin, Instant>,
+    run_pacing_anchor: Option<RunPacingAnchor>,
 }
 
 impl WorkerState {
@@ -252,7 +258,27 @@ impl WorkerState {
             status_message: "Load a .hex file or compile an .ino sketch to begin.".to_string(),
             status: SimulatorStatus::Idle,
             pending_serial: VecDeque::new(),
+            last_host_pin_levels: Vec::new(),
+            host_pin_activity_until: HashMap::new(),
+            run_pacing_anchor: None,
         }
+    }
+
+    fn recent_host_pin_activity(&self) -> Vec<BoardPinLevel> {
+        let now = Instant::now();
+        self.last_host_pin_levels
+            .iter()
+            .filter(|entry| {
+                self.host_pin_activity_until
+                    .get(&entry.pin)
+                    .map(|deadline| *deadline > now)
+                    .unwrap_or(false)
+            })
+            .map(|entry| BoardPinLevel {
+                pin: entry.pin,
+                level: 1,
+            })
+            .collect()
     }
 }
 
@@ -261,6 +287,12 @@ struct PendingSerialInjection {
     remaining: VecDeque<u8>,
     cycles_per_byte: u64,
     next_cycle: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RunPacingAnchor {
+    wall_started_at: Instant,
+    synced_cycles_started: u64,
 }
 
 fn worker_loop(rx: Receiver<WorkerCommand>, shared: Arc<Mutex<SharedSimulationState>>) {
@@ -274,6 +306,7 @@ fn worker_loop(rx: Receiver<WorkerCommand>, shared: Arc<Mutex<SharedSimulationSt
             match command {
                 WorkerCommand::LoadHex { path, board } => {
                     load_runtime_from_hex(&mut state, board, None, &path);
+                    state.run_pacing_anchor = None;
                     dirty = true;
                 }
                 WorkerCommand::CompileAndLoad { path, board } => {
@@ -300,6 +333,7 @@ fn worker_loop(rx: Receiver<WorkerCommand>, shared: Arc<Mutex<SharedSimulationSt
                             state.status_message = error.to_string();
                         }
                     }
+                    state.run_pacing_anchor = None;
                     dirty = true;
                 }
                 WorkerCommand::Run => {
@@ -315,6 +349,7 @@ fn worker_loop(rx: Receiver<WorkerCommand>, shared: Arc<Mutex<SharedSimulationSt
                     {
                         state.status = SimulatorStatus::Running;
                         state.status_message = "Running firmware".to_string();
+                        state.run_pacing_anchor = None;
                         dirty = true;
                     }
                 }
@@ -322,6 +357,7 @@ fn worker_loop(rx: Receiver<WorkerCommand>, shared: Arc<Mutex<SharedSimulationSt
                     if state.runtime.is_some() && state.status == SimulatorStatus::Running {
                         state.status = SimulatorStatus::Paused;
                         state.status_message = "Execution paused".to_string();
+                        state.run_pacing_anchor = None;
                         dirty = true;
                     }
                 }
@@ -340,6 +376,7 @@ fn worker_loop(rx: Receiver<WorkerCommand>, shared: Arc<Mutex<SharedSimulationSt
                                 state.status_message = error;
                             }
                         }
+                        state.run_pacing_anchor = None;
                         dirty = true;
                     }
                 }
@@ -348,6 +385,7 @@ fn worker_loop(rx: Receiver<WorkerCommand>, shared: Arc<Mutex<SharedSimulationSt
                         let source_path = state.source_path.clone();
                         let board = state.loaded_board;
                         load_runtime_from_hex(&mut state, board, source_path, &firmware_path);
+                        state.run_pacing_anchor = None;
                         dirty = true;
                     }
                 }
@@ -411,15 +449,91 @@ fn worker_loop(rx: Receiver<WorkerCommand>, shared: Arc<Mutex<SharedSimulationSt
                 state.status_message = "No firmware loaded".to_string();
                 dirty = true;
             }
+            pace_running_runtime(&mut state);
         } else {
+            state.run_pacing_anchor = None;
             thread::sleep(Duration::from_millis(IDLE_POLL_MS));
         }
 
+        refresh_host_pin_activity(&mut state);
         publish_if_needed(&state, &shared, &mut last_publish, dirty);
         if dirty && last_publish.elapsed() >= snapshot_interval {
             dirty = false;
         }
     }
+}
+
+fn refresh_host_pin_activity(state: &mut WorkerState) {
+    let Some(runtime) = state.runtime.as_ref() else {
+        state.last_host_pin_levels.clear();
+        state.host_pin_activity_until.clear();
+        return;
+    };
+
+    let now = Instant::now();
+    let next_levels = runtime.host_pin_levels();
+    let previous_levels = state
+        .last_host_pin_levels
+        .iter()
+        .map(|entry| (entry.pin, entry.level))
+        .collect::<HashMap<_, _>>();
+
+    for entry in &next_levels {
+        let changed = previous_levels
+            .get(&entry.pin)
+            .map(|previous| *previous != entry.level)
+            .unwrap_or(entry.level != 0);
+        if changed || entry.level != 0 {
+            state.host_pin_activity_until.insert(
+                entry.pin,
+                now + Duration::from_millis(HOST_PIN_ACTIVITY_HOLD_MS),
+            );
+        }
+    }
+
+    let current_levels = next_levels
+        .iter()
+        .map(|entry| (entry.pin, entry.level))
+        .collect::<HashMap<_, _>>();
+    state.host_pin_activity_until.retain(|pin, deadline| {
+        current_levels.get(pin).copied().unwrap_or(0) != 0 || *deadline > now
+    });
+    state.last_host_pin_levels = next_levels;
+}
+
+fn pace_running_runtime(state: &mut WorkerState) {
+    let Some(runtime) = state.runtime.as_ref() else {
+        state.run_pacing_anchor = None;
+        return;
+    };
+    if state.status != SimulatorStatus::Running {
+        state.run_pacing_anchor = None;
+        return;
+    }
+
+    let anchor = state.run_pacing_anchor.get_or_insert_with(|| RunPacingAnchor {
+        wall_started_at: Instant::now(),
+        synced_cycles_started: runtime.synced_cycles(),
+    });
+    let simulated_elapsed = runtime
+        .synced_cycles()
+        .saturating_sub(anchor.synced_cycles_started);
+    let target_elapsed = duration_for_cycles(simulated_elapsed, runtime.clock_hz());
+    let actual_elapsed = anchor.wall_started_at.elapsed();
+    if let Some(remaining) = target_elapsed.checked_sub(actual_elapsed) {
+        thread::sleep(remaining.min(Duration::from_millis(8)));
+    }
+}
+
+fn duration_for_cycles(cycles: u64, clock_hz: u32) -> Duration {
+    if cycles == 0 || clock_hz == 0 {
+        return Duration::default();
+    }
+
+    let hz = u64::from(clock_hz);
+    let seconds = cycles / hz;
+    let nanos = ((cycles % hz) * 1_000_000_000u64) / hz;
+    Duration::from_secs(seconds) + Duration::from_nanos(nanos)
 }
 
 fn service_pending_serial(state: &mut WorkerState) {
@@ -496,6 +610,7 @@ fn capture_snapshot(state: &WorkerState) -> SimulationSnapshot {
             state.status,
             state.status_message.clone(),
             state.compile_log.clone(),
+            state.recent_host_pin_activity(),
         )
     } else {
         let mut snapshot = SimulationSnapshot::default();
@@ -574,6 +689,20 @@ impl RuntimeController {
         }
     }
 
+    fn host_pin_levels(&self) -> Vec<BoardPinLevel> {
+        match self {
+            Self::Nano(runtime) => runtime.cpu.bus.host_pin_levels(),
+            Self::Mega(runtime) => runtime.cpu.bus.host_pin_levels(),
+        }
+    }
+
+    fn synced_cycles(&self) -> u64 {
+        match self {
+            Self::Nano(runtime) => runtime.cpu.bus.synced_cycles,
+            Self::Mega(runtime) => runtime.cpu.bus.synced_cycles,
+        }
+    }
+
     fn snapshot(
         &self,
         board: HostBoard,
@@ -582,6 +711,7 @@ impl RuntimeController {
         status: SimulatorStatus,
         status_message: String,
         compile_log: String,
+        recent_host_pin_activity: Vec<BoardPinLevel>,
     ) -> SimulationSnapshot {
         match self {
             Self::Nano(runtime) => capture_runtime_snapshot(
@@ -624,6 +754,7 @@ impl RuntimeController {
                 ],
                 runtime.cpu.bus.synced_cycles,
                 runtime.cpu.bus.host_pin_levels(),
+                recent_host_pin_activity,
             ),
             Self::Mega(runtime) => capture_runtime_snapshot(
                 board,
@@ -656,6 +787,7 @@ impl RuntimeController {
                 ],
                 runtime.cpu.bus.synced_cycles,
                 runtime.cpu.bus.host_pin_levels(),
+                recent_host_pin_activity,
             ),
         }
     }
@@ -684,6 +816,7 @@ fn capture_runtime_snapshot<B: DataBus>(
     extra_lines: Vec<String>,
     synced_cycles: u64,
     host_pin_levels: Vec<BoardPinLevel>,
+    host_pin_recent_activity: Vec<BoardPinLevel>,
 ) -> SimulationSnapshot {
     let mut registers = [0u8; 32];
     registers.copy_from_slice(&cpu.data[0..32]);
@@ -712,6 +845,7 @@ fn capture_runtime_snapshot<B: DataBus>(
         registers,
         extra_lines,
         host_pin_levels,
+        host_pin_recent_activity,
     }
 }
 
@@ -820,17 +954,19 @@ fn format_compile_log(artifact: &crate::arduino::CompileArtifact) -> String {
 mod tests {
     use std::fs;
     use std::path::PathBuf;
+    use std::time::Duration;
 
     use tempfile::tempdir;
 
     use rust_cpu::{DecodedInstruction, Mnemonic, OperandSet};
+    use rust_mcu::{BoardPin, NanoBoard};
     use rust_runtime::RuntimeExit;
 
     use super::{
-        capture_snapshot, format_compile_log, format_instruction, load_runtime_from_hex,
-        map_runtime_exit, serial_text, service_pending_serial, PendingSerialInjection,
-        RuntimeController, SharedSimulationState, SimulationSnapshot, SimulatorStatus, WorkerState,
-        SERIAL_TAIL_BYTES,
+        capture_snapshot, duration_for_cycles, format_compile_log, format_instruction,
+        load_runtime_from_hex, map_runtime_exit, refresh_host_pin_activity, serial_text,
+        service_pending_serial, PendingSerialInjection, RuntimeController, SharedSimulationState,
+        SimulationSnapshot, SimulatorStatus, WorkerState, SERIAL_TAIL_BYTES,
     };
     use crate::arduino::CompileArtifact;
 
@@ -1102,5 +1238,53 @@ mod tests {
             RuntimeController::Mega(_) => panic!("expected nano runtime"),
         }
         assert!(state.pending_serial.is_empty());
+    }
+
+    #[test]
+    fn duration_for_cycles_matches_the_simulated_16mhz_clock() {
+        assert_eq!(duration_for_cycles(16_000_000, 16_000_000), Duration::from_secs(1));
+        assert_eq!(duration_for_cycles(8_000_000, 16_000_000), Duration::from_millis(500));
+    }
+
+    #[test]
+    fn recent_host_pin_activity_survives_fast_high_to_low_transitions() {
+        let mut state = WorkerState::new();
+        state.loaded_board = rust_project::HostBoard::NanoV3;
+        state.runtime = Some(RuntimeController::Nano(rust_runtime::NanoRuntime::new()));
+
+        match state.runtime.as_mut().expect("runtime") {
+            RuntimeController::Nano(runtime) => {
+                runtime.cpu.bus.board.write_pin(BoardPin::Digital(13), 1);
+            }
+            RuntimeController::Mega(_) => panic!("expected nano runtime"),
+        }
+        refresh_host_pin_activity(&mut state);
+
+        match state.runtime.as_mut().expect("runtime") {
+            RuntimeController::Nano(runtime) => {
+                runtime.cpu.bus.board.write_pin(BoardPin::Digital(13), 0);
+            }
+            RuntimeController::Mega(_) => panic!("expected nano runtime"),
+        }
+        refresh_host_pin_activity(&mut state);
+
+        assert!(state
+            .recent_host_pin_activity()
+            .iter()
+            .any(|entry| entry.pin == BoardPin::Digital(13) && entry.level == 1));
+
+        let snapshot = capture_snapshot(&state);
+        assert_eq!(
+            snapshot
+                .host_pin_levels
+                .iter()
+                .find(|entry| entry.pin == BoardPin::Digital(13))
+                .map(|entry| entry.level),
+            Some(0)
+        );
+        assert!(snapshot
+            .host_pin_recent_activity
+            .iter()
+            .any(|entry| entry.pin == BoardPin::Digital(13) && entry.level == 1));
     }
 }
