@@ -3,9 +3,9 @@ use std::collections::{HashMap, VecDeque};
 use rust_cpu::{Cpu, CpuConfig, DataBus, DecodedInstruction, Mnemonic, OperandSet};
 use rust_mcu::atmega2560::{
     Atmega2560Bus, MegaBoard, NullMegaBoard, ADCH, ADCL, ADCSRA, ADCSRB, ADMUX, DDRA, DDRC, EEARH,
-    EEARL, EECR, EEDR, PORTA, PORTC, SPCR as MEGA_SPCR, SPDR as MEGA_SPDR, TCCR0B as MEGA_TCCR0B,
-    TCNT0 as MEGA_TCNT0, TIMSK0 as MEGA_TIMSK0, UBRR0L as MEGA_UBRR0L, UCSR0A as MEGA_UCSR0A,
-    UCSR0B as MEGA_UCSR0B, UDR0 as MEGA_UDR0,
+    EEARL, EECR, EEDR, OCR5BL, PORTA, PORTC, SPCR as MEGA_SPCR, SPDR as MEGA_SPDR,
+    TCCR0B as MEGA_TCCR0B, TCNT0 as MEGA_TCNT0, TIMSK0 as MEGA_TIMSK0,
+    UBRR0L as MEGA_UBRR0L, UCSR0A as MEGA_UCSR0A, UCSR0B as MEGA_UCSR0B, UDR0 as MEGA_UDR0,
 };
 use rust_mcu::atmega328p::{
     Atmega328pBus, NanoBoard, NullNanoBoard, DDRB, DDRD, PORTB, PORTD, SPCR as NANO_SPCR,
@@ -405,12 +405,12 @@ fn mega_spi_chip_select_routing_matches_runtime_bus_behavior() {
     cpu.write_data(PORTA, (1 << 4) | (1 << 5)).unwrap();
     cpu.write_data(MEGA_SPCR, SPE | MSTR).unwrap();
 
-    cpu.write_data(PORTA, 1 << 4).unwrap();
+    cpu.write_data(PORTA, 1 << 5).unwrap();
     cpu.write_data(MEGA_SPDR, 0x11).unwrap();
     assert_eq!(cpu.read_data(MEGA_SPDR).unwrap(), 0xA1);
     assert_eq!(cpu.bus.board.can_log, vec![0x11]);
 
-    cpu.write_data(PORTA, 1 << 5).unwrap();
+    cpu.write_data(PORTA, 1 << 4).unwrap();
     cpu.write_data(MEGA_SPDR, 0x22).unwrap();
     assert_eq!(cpu.read_data(MEGA_SPDR).unwrap(), 0xB2);
     assert_eq!(cpu.bus.board.rtd_log, vec![0x22]);
@@ -465,7 +465,7 @@ fn mega_null_board_tracks_output_levels_pullups_and_idle_spi_chip_selects() {
     assert!(!cpu.bus.spi_transaction_active_can);
     assert!(!cpu.bus.spi_transaction_active_rtd);
 
-    cpu.write_data(PORTA, 1 << 4).unwrap();
+    cpu.write_data(PORTA, 1 << 5).unwrap();
     cpu.write_data(MEGA_SPDR, 0xAA).unwrap();
     assert!(cpu.bus.spi_transaction_active_can);
     assert!(!cpu.bus.spi_transaction_active_rtd);
@@ -473,6 +473,17 @@ fn mega_null_board_tracks_output_levels_pullups_and_idle_spi_chip_selects() {
     cpu.write_data(DDRA, 0x00).unwrap();
     cpu.write_data(PORTA, 1 << 2).unwrap();
     assert_eq!(cpu.bus.board.read_pin(BoardPin::Digital(24)), 1);
+}
+
+#[test]
+fn mega_timer5b_pwm_maps_to_d45() {
+    let board = TestMegaBoard::default();
+    let bus = Atmega2560Bus::new(board, 16_000_000);
+    let mut cpu = Cpu::new(CpuConfig::atmega2560(), bus);
+
+    cpu.write_data(OCR5BL, 77).unwrap();
+
+    assert_eq!(cpu.bus.board.pwm_duty.get(&BoardPin::Digital(45)).copied(), Some(77));
 }
 
 #[test]

@@ -68,6 +68,10 @@ pub const DDRL: usize = 0x10A;
 pub const PORTL: usize = 0x10B;
 pub const OCR5CL: usize = 0x12C;
 pub const OCR5CH: usize = 0x12D;
+pub const OCR5AL: usize = 0x128;
+pub const OCR5AH: usize = 0x129;
+pub const OCR5BL: usize = 0x12A;
+pub const OCR5BH: usize = 0x12B;
 
 pub const TIMER0_OVF_VECTOR: u8 = 23;
 pub const USART_RX_VECTOR: u8 = 25;
@@ -131,6 +135,7 @@ pub trait MegaBoard {
 pub struct NullMegaBoard {
     pin_modes: HashMap<BoardPin, PinMode>,
     pin_levels: HashMap<BoardPin, u8>,
+    analog_input_levels: HashMap<BoardPin, u16>,
 }
 
 impl Default for NullMegaBoard {
@@ -138,7 +143,26 @@ impl Default for NullMegaBoard {
         Self {
             pin_modes: HashMap::new(),
             pin_levels: HashMap::new(),
+            analog_input_levels: HashMap::new(),
         }
+    }
+}
+
+impl NullMegaBoard {
+    pub fn set_input_level(&mut self, pin: BoardPin, level: u8) {
+        self.pin_levels.insert(pin, u8::from(level != 0));
+    }
+
+    pub fn clear_input_level(&mut self, pin: BoardPin) {
+        self.pin_levels.remove(&pin);
+    }
+
+    pub fn set_analog_input_level(&mut self, pin: BoardPin, counts: u16) {
+        self.analog_input_levels.insert(pin, counts.min(1023));
+    }
+
+    pub fn clear_analog_input_level(&mut self, pin: BoardPin) {
+        self.analog_input_levels.remove(&pin);
     }
 }
 
@@ -164,6 +188,9 @@ impl MegaBoard for NullMegaBoard {
     }
 
     fn analog_input_counts(&self, pin: BoardPin) -> u16 {
+        if let Some(level) = self.analog_input_levels.get(&pin) {
+            return (*level).min(1023);
+        }
         match pin {
             // The stock 1602 LCD keypad shield idles near full-scale when no key is pressed.
             BoardPin::Analog(0) => 1023,
@@ -373,6 +400,8 @@ impl<B: MegaBoard> Atmega2560Bus<B> {
     }
 
     fn sync_pwm_output(&mut self, data: &[u8]) {
+        self.board.set_pwm_duty(BoardPin::Digital(46), data[OCR5AL]);
+        self.board.set_pwm_duty(BoardPin::Digital(45), data[OCR5BL]);
         self.board.set_pwm_duty(BoardPin::Digital(44), data[OCR5CL]);
     }
 }
@@ -452,7 +481,8 @@ impl<B: MegaBoard> DataBus for Atmega2560Bus<B> {
             | PORTF | DDRG | PORTG | DDRH | PORTH | DDRJ | PORTJ | DDRK | PORTK | DDRL | PORTL
             | TIFR0 | TCCR0A | TCCR0B | TCNT0 | OCR0A | OCR0B | SPCR | SPSR | TIMSK0 | UCSR0A
             | UCSR0B | UCSR0C | UBRR0L | UBRR0H | EECR | EEDR | EEARL | EEARH | ADCL | ADCH
-            | ADCSRA | ADCSRB | ADMUX | DIDR0 | DIDR2 | OCR5CL | OCR5CH => Some(data[address]),
+            | ADCSRA | ADCSRB | ADMUX | DIDR0 | DIDR2 | OCR5AL | OCR5AH | OCR5BL | OCR5BH
+            | OCR5CL | OCR5CH => Some(data[address]),
             _ => None,
         }
     }
@@ -572,8 +602,8 @@ impl<B: MegaBoard> DataBus for Atmega2560Bus<B> {
                     spsr: data[SPSR],
                 };
                 if (data[SPCR] & (SPE | MSTR)) == (SPE | MSTR) {
-                    let cs_can = self.board.read_pin(BoardPin::Digital(27)) == 0;
-                    let cs_rtd = self.board.read_pin(BoardPin::Digital(26)) == 0;
+                    let cs_can = self.board.read_pin(BoardPin::Digital(26)) == 0;
+                    let cs_rtd = self.board.read_pin(BoardPin::Digital(27)) == 0;
                     if cs_can {
                         if !self.spi_transaction_active_can {
                             self.board.begin_spi_can(settings);
@@ -601,7 +631,7 @@ impl<B: MegaBoard> DataBus for Atmega2560Bus<B> {
                 self.write_eecr(data, value);
                 true
             }
-            OCR5CL | OCR5CH => {
+            OCR5AL | OCR5AH | OCR5BL | OCR5BH | OCR5CL | OCR5CH => {
                 data[address] = value;
                 self.sync_pwm_output(data);
                 true

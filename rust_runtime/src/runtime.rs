@@ -7,10 +7,11 @@ use rust_mcu::atmega328p::{
     Atmega328pBus, NullNanoBoard, UBRR0H as NANO_UBRR0H, UBRR0L as NANO_UBRR0L,
     UCSR0A as NANO_UCSR0A,
 };
+use serde::{Deserialize, Serialize};
 
 const U2X0: u8 = 1 << 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RuntimeExit {
     BreakHit,
     Sleeping,

@@ -2697,6 +2697,7 @@ name = "rust_mcu"
 version = "0.1.0"
 dependencies = [
  "rust_cpu",
+ "serde",
 ]
 
 [[package]]
@@ -2715,6 +2716,7 @@ version = "0.1.0"
 dependencies = [
  "rust_cpu",
  "rust_mcu",
+ "serde",
 ]
 
 [[package]]

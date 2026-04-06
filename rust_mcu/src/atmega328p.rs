@@ -123,6 +123,16 @@ impl NanoBoard for NullNanoBoard {
     }
 }
 
+impl NullNanoBoard {
+    pub fn set_input_level(&mut self, pin: BoardPin, level: u8) {
+        self.pin_levels.insert(pin, u8::from(level != 0));
+    }
+
+    pub fn clear_input_level(&mut self, pin: BoardPin) {
+        self.pin_levels.remove(&pin);
+    }
+}
+
 pub struct Atmega328pBus<B: NanoBoard> {
     pub board: B,
     pub clock_hz: u32,
