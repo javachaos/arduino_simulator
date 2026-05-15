@@ -19,10 +19,20 @@ pub enum StepOutcome {
     Sleeping,
 }
 
+const MAX_BASIC_BLOCK_INSTRUCTIONS: usize = 32;
+
+struct DecodedBlock {
+    generation: u64,
+    instructions: Vec<DecodedInstruction>,
+}
+
 pub struct Cpu<B: DataBus> {
     pub config: CpuConfig,
     pub bus: B,
     pub program: Vec<u8>,
+    decoded_cache: Vec<Option<DecodedInstruction>>,
+    block_cache: Vec<Option<DecodedBlock>>,
+    block_cache_generation: u64,
     pub data: Vec<u8>,
     pub pc: u32,
     pub cycles: u64,
@@ -35,6 +45,11 @@ impl<B: DataBus> Cpu<B> {
     pub fn new(config: CpuConfig, bus: B) -> Self {
         let mut cpu = Self {
             program: vec![0xFF; config.program_size_bytes],
+            decoded_cache: vec![None; config.program_size_words()],
+            block_cache: std::iter::repeat_with(|| None)
+                .take(config.program_size_words())
+                .collect(),
+            block_cache_generation: 1,
             data: vec![0x00; config.data_size_bytes],
             pc: 0,
             cycles: 0,
@@ -52,6 +67,7 @@ impl<B: DataBus> Cpu<B> {
         self.data.fill(0);
         if clear_program {
             self.program.fill(0xFF);
+            self.clear_decoded_cache();
         }
         self.pc = 0;
         self.cycles = 0;
@@ -74,6 +90,8 @@ impl<B: DataBus> Cpu<B> {
             return Err(CpuError::ProgramBounds);
         }
         self.program[start_byte..end].copy_from_slice(program_bytes);
+        self.invalidate_decoded_cache_for_byte_range(start_byte, end);
+        self.invalidate_block_cache();
         Ok(())
     }
 
@@ -93,7 +111,42 @@ impl<B: DataBus> Cpu<B> {
         let byte_address = address * 2;
         self.program[byte_address] = (word & 0x00FF) as u8;
         self.program[byte_address + 1] = (word >> 8) as u8;
+        self.invalidate_decoded_cache_for_word(address);
+        self.invalidate_block_cache();
         Ok(())
+    }
+
+    pub fn clear_decoded_cache(&mut self) {
+        self.decoded_cache.fill(None);
+        self.invalidate_block_cache();
+    }
+
+    fn invalidate_block_cache(&mut self) {
+        self.block_cache_generation = self.block_cache_generation.wrapping_add(1);
+        if self.block_cache_generation == 0 {
+            self.block_cache.fill_with(|| None);
+            self.block_cache_generation = 1;
+        }
+    }
+
+    fn invalidate_decoded_cache_for_word(&mut self, word_address: usize) {
+        let start = word_address.saturating_sub(1);
+        let end = word_address.saturating_add(1).min(self.decoded_cache.len());
+        for entry in &mut self.decoded_cache[start..end] {
+            *entry = None;
+        }
+    }
+
+    fn invalidate_decoded_cache_for_byte_range(&mut self, start_byte: usize, end_byte: usize) {
+        if start_byte >= end_byte || self.decoded_cache.is_empty() {
+            return;
+        }
+
+        let start_word = (start_byte / 2).saturating_sub(1);
+        let end_word = end_byte.div_ceil(2).min(self.decoded_cache.len());
+        for entry in &mut self.decoded_cache[start_word..end_word] {
+            *entry = None;
+        }
     }
 
     pub fn read_register(&self, index: usize) -> Result<u8, CpuError> {
@@ -163,7 +216,7 @@ impl<B: DataBus> Cpu<B> {
         if self.sleeping {
             return Err(CpuError::Sleeping);
         }
-        let instruction = self.decode_at(self.pc)?;
+        let instruction = self.decode_at_cached(self.pc)?;
         self.execute(&instruction)?;
         if self.break_hit {
             Ok(StepOutcome::BreakHit)
@@ -175,20 +228,70 @@ impl<B: DataBus> Cpu<B> {
     }
 
     pub fn run(&mut self, max_instructions: Option<usize>) -> Result<usize, CpuError> {
+        let instruction_limit = max_instructions.unwrap_or(usize::MAX);
+        let (executed, _outcome) = self.run_cached(instruction_limit)?;
+        Ok(executed)
+    }
+
+    pub fn run_cached(
+        &mut self,
+        instruction_budget: usize,
+    ) -> Result<(usize, StepOutcome), CpuError> {
+        if instruction_budget == 0 {
+            return Ok((0, StepOutcome::Executed));
+        }
+        if self.sleeping {
+            return Err(CpuError::Sleeping);
+        }
+
         let mut executed = 0usize;
-        while max_instructions
-            .map(|limit| executed < limit)
-            .unwrap_or(true)
-        {
-            match self.step()? {
-                StepOutcome::Executed => executed += 1,
-                StepOutcome::BreakHit | StepOutcome::Sleeping => {
-                    executed += 1;
+        while executed < instruction_budget {
+            let block_start = self.pc;
+            let block_index = block_start as usize;
+            let block_len = self.ensure_decoded_block(block_start)?;
+            let mut rebuild_block = false;
+
+            for offset in 0..block_len {
+                if executed >= instruction_budget {
+                    return Ok((executed, StepOutcome::Executed));
+                }
+
+                let instruction = self.block_cache[block_index]
+                    .as_ref()
+                    .expect("decoded block must be present")
+                    .instructions[offset];
+                if !self.cached_instruction_matches(instruction)? {
+                    self.invalidate_decoded_cache_for_word(instruction.address as usize);
+                    self.invalidate_block_cache();
+                    rebuild_block = true;
+                    break;
+                }
+                if self.pc != instruction.address {
+                    break;
+                }
+
+                let expected_next_pc =
+                    self.normalize_pc(instruction.address + instruction.word_length as u32);
+                self.execute(&instruction)?;
+                executed += 1;
+
+                if self.break_hit {
+                    return Ok((executed, StepOutcome::BreakHit));
+                }
+                if self.sleeping {
+                    return Ok((executed, StepOutcome::Sleeping));
+                }
+                if self.pc != expected_next_pc || instruction_ends_basic_block(instruction) {
                     break;
                 }
             }
+
+            if rebuild_block {
+                continue;
+            }
         }
-        Ok(executed)
+
+        Ok((executed, StepOutcome::Executed))
     }
 
     pub fn take_interrupt(
@@ -1099,6 +1202,84 @@ impl<B: DataBus> Cpu<B> {
         Ok(instruction)
     }
 
+    fn decode_at_cached(&mut self, address: u32) -> Result<DecodedInstruction, CpuError> {
+        let index = address as usize;
+        if index >= self.decoded_cache.len() {
+            return Err(CpuError::ProgramBounds);
+        }
+
+        if let Some(instruction) = self.decoded_cache[index] {
+            let opcode_matches = self.fetch_word(address)? == instruction.opcode;
+            let next_word_matches = match instruction.next_word {
+                Some(expected) => self.fetch_word(address + 1)? == expected,
+                None => true,
+            };
+            if opcode_matches && next_word_matches {
+                return Ok(instruction);
+            }
+        }
+
+        let instruction = self.decode_at(address)?;
+        self.decoded_cache[index] = Some(instruction);
+        Ok(instruction)
+    }
+
+    fn ensure_decoded_block(&mut self, address: u32) -> Result<usize, CpuError> {
+        let index = address as usize;
+        if index >= self.block_cache.len() {
+            return Err(CpuError::ProgramBounds);
+        }
+
+        if let Some(block) = &self.block_cache[index] {
+            if block.generation == self.block_cache_generation {
+                return Ok(block.instructions.len());
+            }
+        }
+
+        let instructions = self.build_decoded_block(address)?;
+        let len = instructions.len();
+        self.block_cache[index] = Some(DecodedBlock {
+            generation: self.block_cache_generation,
+            instructions,
+        });
+        Ok(len)
+    }
+
+    fn build_decoded_block(
+        &mut self,
+        start_address: u32,
+    ) -> Result<Vec<DecodedInstruction>, CpuError> {
+        let mut instructions = Vec::with_capacity(MAX_BASIC_BLOCK_INSTRUCTIONS);
+        let mut address = start_address;
+
+        for _ in 0..MAX_BASIC_BLOCK_INSTRUCTIONS {
+            let instruction = self.decode_at_cached(address)?;
+            let ends_block = instruction_ends_basic_block(instruction);
+            address = self.normalize_pc(address + instruction.word_length as u32);
+            instructions.push(instruction);
+
+            if ends_block {
+                break;
+            }
+        }
+
+        Ok(instructions)
+    }
+
+    fn cached_instruction_matches(
+        &self,
+        instruction: DecodedInstruction,
+    ) -> Result<bool, CpuError> {
+        if self.fetch_word(instruction.address)? != instruction.opcode {
+            return Ok(false);
+        }
+
+        match instruction.next_word {
+            Some(expected) => Ok(self.fetch_word(instruction.address + 1)? == expected),
+            None => Ok(true),
+        }
+    }
+
     fn execute(&mut self, instruction: &DecodedInstruction) -> Result<(), CpuError> {
         let mut next_pc = instruction.address + instruction.word_length as u32;
         let mut cycles = 1u8;
@@ -1191,7 +1372,7 @@ impl<B: DataBus> Cpu<B> {
             }
             Mnemonic::Cpse => {
                 if self.data[op.d.unwrap() as usize] == self.data[op.r.unwrap() as usize] {
-                    let skipped = self.decode_at(next_pc)?;
+                    let skipped = self.decode_at_cached(next_pc)?;
                     next_pc += skipped.word_length as u32;
                     cycles = if skipped.word_length == 2 { 3 } else { 2 };
                 }
@@ -1367,7 +1548,7 @@ impl<B: DataBus> Cpu<B> {
                 };
                 cycles = 1;
                 if should_skip {
-                    let skipped = self.decode_at(next_pc)?;
+                    let skipped = self.decode_at_cached(next_pc)?;
                     next_pc += skipped.word_length as u32;
                     cycles = if skipped.word_length == 2 { 3 } else { 2 };
                 }
@@ -1401,7 +1582,7 @@ impl<B: DataBus> Cpu<B> {
                     bit
                 };
                 if should_skip {
-                    let skipped = self.decode_at(next_pc)?;
+                    let skipped = self.decode_at_cached(next_pc)?;
                     next_pc += skipped.word_length as u32;
                     cycles = if skipped.word_length == 2 { 3 } else { 2 };
                 }
@@ -1857,6 +2038,32 @@ fn sign_extend(value: u32, bits: u8) -> i32 {
     } else {
         value as i32
     }
+}
+
+fn instruction_ends_basic_block(instruction: DecodedInstruction) -> bool {
+    matches!(
+        instruction.mnemonic,
+        Mnemonic::Break
+            | Mnemonic::Sleep
+            | Mnemonic::Ret
+            | Mnemonic::Reti
+            | Mnemonic::Ijmp
+            | Mnemonic::Icall
+            | Mnemonic::Eijmp
+            | Mnemonic::Eicall
+            | Mnemonic::Jmp
+            | Mnemonic::Call
+            | Mnemonic::Rjmp
+            | Mnemonic::Rcall
+            | Mnemonic::Brbs
+            | Mnemonic::Brbc
+            | Mnemonic::Cpse
+            | Mnemonic::Sbic
+            | Mnemonic::Sbis
+            | Mnemonic::Sbrc
+            | Mnemonic::Sbrs
+            | Mnemonic::Unsupported
+    )
 }
 
 fn other_name(mnemonic: Mnemonic) -> &'static str {

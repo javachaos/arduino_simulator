@@ -166,6 +166,16 @@ fn run_chunk<B>(
 where
     B: rust_cpu::DataBus + SerialTap,
 {
+    if !until_serial {
+        let (executed, outcome) = cpu.run_cached(instruction_budget)?;
+        let exit = match outcome {
+            StepOutcome::Executed => RuntimeExit::MaxInstructionsReached,
+            StepOutcome::BreakHit => RuntimeExit::BreakHit,
+            StepOutcome::Sleeping => RuntimeExit::Sleeping,
+        };
+        return Ok((executed, Some(exit)));
+    }
+
     let mut executed = 0usize;
     while executed < instruction_budget {
         match cpu.step()? {

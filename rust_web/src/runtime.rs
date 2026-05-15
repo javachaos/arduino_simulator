@@ -556,28 +556,16 @@ fn configured_baud(clock_hz: u32, ucsr0a: u8, ubrr0l: u8, ubrr0h: u8) -> u32 {
     clock_hz / denom
 }
 
-fn run_chunk<B>(
-    cpu: &mut Cpu<B>,
-    instruction_budget: usize,
-) -> Result<RuntimeExit, CpuError>
+fn run_chunk<B>(cpu: &mut Cpu<B>, instruction_budget: usize) -> Result<RuntimeExit, CpuError>
 where
     B: DataBus,
 {
-    let mut executed = 0usize;
-    while executed < instruction_budget {
-        match cpu.step()? {
-            StepOutcome::Executed => {
-                executed += 1;
-            }
-            StepOutcome::BreakHit => {
-                return Ok(RuntimeExit::BreakHit);
-            }
-            StepOutcome::Sleeping => {
-                return Ok(RuntimeExit::Sleeping);
-            }
-        }
-    }
-    Ok(RuntimeExit::MaxInstructionsReached)
+    let (_executed, outcome) = cpu.run_cached(instruction_budget)?;
+    Ok(match outcome {
+        StepOutcome::Executed => RuntimeExit::MaxInstructionsReached,
+        StepOutcome::BreakHit => RuntimeExit::BreakHit,
+        StepOutcome::Sleeping => RuntimeExit::Sleeping,
+    })
 }
 
 #[cfg(test)]
