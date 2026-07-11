@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-
 use rust_cpu::{CpuConfig, DataBus, DecodedInstruction};
 
-use crate::common::{BoardPin, BoardPinLevel, PinMode, SerialState, SpiSettings, Timer0State};
+use crate::common::{
+    BoardPin, BoardPinLevel, PinMap, PinMode, SerialState, SpiSettings, Timer0State,
+};
 
 pub const PINB: usize = 0x23;
 pub const DDRB: usize = 0x24;
@@ -97,18 +97,18 @@ pub trait NanoBoard {
 
 #[derive(Debug, Default, Clone)]
 pub struct NullNanoBoard {
-    pin_modes: HashMap<BoardPin, PinMode>,
-    pin_levels: HashMap<BoardPin, u8>,
+    pin_modes: PinMap<PinMode>,
+    pin_levels: PinMap<u8>,
 }
 
 impl NanoBoard for NullNanoBoard {
     fn advance_time_ms(&mut self, _elapsed_ms: f64) {}
 
     fn read_pin(&self, pin: BoardPin) -> u8 {
-        if let Some(level) = self.pin_levels.get(&pin) {
-            return *level;
+        if let Some(level) = self.pin_levels.get(pin) {
+            return level;
         }
-        match self.pin_modes.get(&pin).copied() {
+        match self.pin_modes.get(pin) {
             Some(PinMode::InputPullup) => 1,
             _ => 0,
         }
@@ -129,7 +129,7 @@ impl NullNanoBoard {
     }
 
     pub fn clear_input_level(&mut self, pin: BoardPin) {
-        self.pin_levels.remove(&pin);
+        self.pin_levels.remove(pin);
     }
 }
 

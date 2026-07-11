@@ -161,6 +161,21 @@ impl SimulationController {
         }
     }
 
+    pub fn latest_snapshot_if_new(&self, last_sequence: u64) -> Option<SharedSimulationState> {
+        match self.shared.lock() {
+            Ok(state) if state.sequence == last_sequence => None,
+            Ok(state) => Some(state.clone()),
+            Err(poisoned) => {
+                let mut state = poisoned.into_inner().clone();
+                state.sequence = state.sequence.wrapping_add(1);
+                state.snapshot.status = SimulatorStatus::Error;
+                state.snapshot.status_message =
+                    "Simulation state became poisoned; the worker likely crashed.".to_string();
+                Some(state)
+            }
+        }
+    }
+
     pub fn load_hex(&self, path: PathBuf, board: HostBoard) {
         self.send_command(
             WorkerCommand::LoadHex { path, board },
@@ -298,8 +313,7 @@ struct RunPacingAnchor {
 fn worker_loop(rx: Receiver<WorkerCommand>, shared: Arc<Mutex<SharedSimulationState>>) {
     let mut state = WorkerState::new();
     let mut dirty = true;
-    let snapshot_interval = Duration::from_millis(SNAPSHOT_INTERVAL_MS);
-    let mut last_publish = Instant::now() - snapshot_interval;
+    let mut last_publish = Instant::now() - Duration::from_millis(SNAPSHOT_INTERVAL_MS);
 
     loop {
         while let Ok(command) = rx.try_recv() {
@@ -315,7 +329,7 @@ fn worker_loop(rx: Receiver<WorkerCommand>, shared: Arc<Mutex<SharedSimulationSt
                     state.status = SimulatorStatus::Compiling;
                     state.status_message =
                         format!("Compiling {} for {}", path.display(), board.label());
-                    publish_if_needed(&state, &shared, &mut last_publish, true);
+                    publish_if_needed(&state, &shared, &mut last_publish, true, true);
 
                     match compile_ino(&path, board) {
                         Ok(artifact) => {
@@ -416,7 +430,7 @@ fn worker_loop(rx: Receiver<WorkerCommand>, shared: Arc<Mutex<SharedSimulationSt
                     }
                 }
                 WorkerCommand::Shutdown => {
-                    publish_if_needed(&state, &shared, &mut last_publish, true);
+                    publish_if_needed(&state, &shared, &mut last_publish, dirty, true);
                     return;
                 }
             }
@@ -456,8 +470,7 @@ fn worker_loop(rx: Receiver<WorkerCommand>, shared: Arc<Mutex<SharedSimulationSt
         }
 
         refresh_host_pin_activity(&mut state);
-        publish_if_needed(&state, &shared, &mut last_publish, dirty);
-        if dirty && last_publish.elapsed() >= snapshot_interval {
+        if publish_if_needed(&state, &shared, &mut last_publish, dirty, false) {
             dirty = false;
         }
     }
@@ -472,16 +485,12 @@ fn refresh_host_pin_activity(state: &mut WorkerState) {
 
     let now = Instant::now();
     let next_levels = runtime.host_pin_levels();
-    let previous_levels = state
-        .last_host_pin_levels
-        .iter()
-        .map(|entry| (entry.pin, entry.level))
-        .collect::<HashMap<_, _>>();
-
-    for entry in &next_levels {
-        let changed = previous_levels
-            .get(&entry.pin)
-            .map(|previous| *previous != entry.level)
+    for (index, entry) in next_levels.iter().enumerate() {
+        let changed = state
+            .last_host_pin_levels
+            .get(index)
+            .filter(|previous| previous.pin == entry.pin)
+            .map(|previous| previous.level != entry.level)
             .unwrap_or(entry.level != 0);
         if changed || entry.level != 0 {
             state.host_pin_activity_until.insert(
@@ -491,12 +500,13 @@ fn refresh_host_pin_activity(state: &mut WorkerState) {
         }
     }
 
-    let current_levels = next_levels
-        .iter()
-        .map(|entry| (entry.pin, entry.level))
-        .collect::<HashMap<_, _>>();
     state.host_pin_activity_until.retain(|pin, deadline| {
-        current_levels.get(pin).copied().unwrap_or(0) != 0 || *deadline > now
+        next_levels
+            .iter()
+            .find(|entry| entry.pin == *pin)
+            .map(|entry| entry.level != 0)
+            .unwrap_or(false)
+            || *deadline > now
     });
     state.last_host_pin_levels = next_levels;
 }
@@ -589,16 +599,19 @@ fn publish_if_needed(
     shared: &Arc<Mutex<SharedSimulationState>>,
     last_publish: &mut Instant,
     dirty: bool,
-) {
-    if !dirty && last_publish.elapsed() < Duration::from_millis(SNAPSHOT_INTERVAL_MS) {
-        return;
+    force: bool,
+) -> bool {
+    if !force && (!dirty || last_publish.elapsed() < Duration::from_millis(SNAPSHOT_INTERVAL_MS)) {
+        return false;
     }
 
     if let Ok(mut shared_state) = shared.lock() {
         shared_state.sequence = shared_state.sequence.wrapping_add(1);
         shared_state.snapshot = capture_snapshot(state);
         *last_publish = Instant::now();
+        return true;
     }
+    false
 }
 
 fn capture_snapshot(state: &WorkerState) -> SimulationSnapshot {
@@ -954,7 +967,9 @@ fn format_compile_log(artifact: &crate::arduino::CompileArtifact) -> String {
 mod tests {
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::{mpsc, Arc, Mutex};
     use std::time::Duration;
+    use std::time::Instant;
 
     use tempfile::tempdir;
 
@@ -964,9 +979,10 @@ mod tests {
 
     use super::{
         capture_snapshot, duration_for_cycles, format_compile_log, format_instruction,
-        load_runtime_from_hex, map_runtime_exit, refresh_host_pin_activity, serial_text,
-        service_pending_serial, PendingSerialInjection, RuntimeController, SharedSimulationState,
-        SimulationSnapshot, SimulatorStatus, WorkerState, SERIAL_TAIL_BYTES,
+        load_runtime_from_hex, map_runtime_exit, publish_if_needed, refresh_host_pin_activity,
+        serial_text, service_pending_serial, PendingSerialInjection, RuntimeController,
+        SharedSimulationState, SimulationController, SimulationSnapshot, SimulatorStatus,
+        WorkerState, SERIAL_TAIL_BYTES, SNAPSHOT_INTERVAL_MS,
     };
     use crate::arduino::CompileArtifact;
 
@@ -1040,6 +1056,74 @@ mod tests {
         let shared = SharedSimulationState::default();
         assert_eq!(shared.sequence, 1);
         assert_eq!(shared.snapshot.status, SimulatorStatus::Idle);
+    }
+
+    #[test]
+    fn unchanged_simulation_snapshot_is_not_cloned_for_the_gui() {
+        let (tx, _rx) = mpsc::channel();
+        let shared = Arc::new(Mutex::new(SharedSimulationState::default()));
+        let controller = SimulationController {
+            tx,
+            shared: Arc::clone(&shared),
+            worker: None,
+        };
+        let sequence = controller.latest_snapshot().sequence;
+
+        assert!(controller.latest_snapshot_if_new(sequence).is_none());
+        shared.lock().expect("shared state").sequence += 1;
+        assert_eq!(
+            controller
+                .latest_snapshot_if_new(sequence)
+                .expect("new snapshot")
+                .sequence,
+            sequence + 1
+        );
+    }
+
+    #[test]
+    fn snapshot_publication_waits_for_interval_unless_forced() {
+        let state = WorkerState::new();
+        let shared = Arc::new(Mutex::new(SharedSimulationState::default()));
+        let initial_sequence = shared.lock().expect("shared state").sequence;
+        let mut last_publish = Instant::now();
+
+        assert!(!publish_if_needed(
+            &state,
+            &shared,
+            &mut last_publish,
+            true,
+            false
+        ));
+        assert_eq!(
+            shared.lock().expect("shared state").sequence,
+            initial_sequence
+        );
+
+        assert!(publish_if_needed(
+            &state,
+            &shared,
+            &mut last_publish,
+            true,
+            true
+        ));
+
+        last_publish = Instant::now() - Duration::from_millis(SNAPSHOT_INTERVAL_MS);
+        assert!(publish_if_needed(
+            &state,
+            &shared,
+            &mut last_publish,
+            true,
+            false
+        ));
+
+        last_publish = Instant::now() - Duration::from_millis(SNAPSHOT_INTERVAL_MS);
+        assert!(!publish_if_needed(
+            &state,
+            &shared,
+            &mut last_publish,
+            false,
+            false
+        ));
     }
 
     #[test]

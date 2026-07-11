@@ -1270,7 +1270,7 @@ impl<B: DataBus> Cpu<B> {
             Mnemonic::Swap => {
                 let d = op.d.unwrap() as usize;
                 let value = self.data[d];
-                self.data[d] = (value << 4) | (value >> 4);
+                self.data[d] = value.rotate_right(4);
             }
             Mnemonic::Inc => {
                 let d = op.d.unwrap() as usize;

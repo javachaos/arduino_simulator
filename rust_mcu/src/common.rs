@@ -21,6 +21,82 @@ pub struct BoardPinLevel {
     pub level: u8,
 }
 
+const DIGITAL_PIN_SLOTS: usize = 54;
+const ANALOG_PIN_SLOTS: usize = 16;
+const PIN_SLOTS: usize = DIGITAL_PIN_SLOTS + ANALOG_PIN_SLOTS;
+
+#[derive(Debug, Clone)]
+pub(crate) struct PinMap<T: Copy> {
+    values: Box<[Option<T>; PIN_SLOTS]>,
+}
+
+impl<T: Copy> Default for PinMap<T> {
+    fn default() -> Self {
+        Self {
+            values: Box::new([None; PIN_SLOTS]),
+        }
+    }
+}
+
+impl<T: Copy> PinMap<T> {
+    pub(crate) fn get(&self, pin: BoardPin) -> Option<T> {
+        pin_slot(pin).and_then(|index| self.values[index])
+    }
+
+    pub(crate) fn insert(&mut self, pin: BoardPin, value: T) {
+        if let Some(index) = pin_slot(pin) {
+            self.values[index] = Some(value);
+        }
+    }
+
+    pub(crate) fn remove(&mut self, pin: BoardPin) {
+        if let Some(index) = pin_slot(pin) {
+            self.values[index] = None;
+        }
+    }
+}
+
+fn pin_slot(pin: BoardPin) -> Option<usize> {
+    match pin {
+        BoardPin::Digital(index) if usize::from(index) < DIGITAL_PIN_SLOTS => {
+            Some(usize::from(index))
+        }
+        BoardPin::Analog(index) if usize::from(index) < ANALOG_PIN_SLOTS => {
+            Some(DIGITAL_PIN_SLOTS + usize::from(index))
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod pin_map_tests {
+    use super::{BoardPin, PinMap};
+
+    #[test]
+    fn fixed_pin_map_keeps_digital_and_analog_slots_distinct() {
+        let mut pins = PinMap::default();
+        pins.insert(BoardPin::Digital(0), 1u8);
+        pins.insert(BoardPin::Analog(0), 2u8);
+
+        assert_eq!(pins.get(BoardPin::Digital(0)), Some(1));
+        assert_eq!(pins.get(BoardPin::Analog(0)), Some(2));
+
+        pins.remove(BoardPin::Digital(0));
+        assert_eq!(pins.get(BoardPin::Digital(0)), None);
+        assert_eq!(pins.get(BoardPin::Analog(0)), Some(2));
+    }
+
+    #[test]
+    fn fixed_pin_map_ignores_out_of_range_board_pins() {
+        let mut pins = PinMap::default();
+        pins.insert(BoardPin::Digital(54), 1u8);
+        pins.insert(BoardPin::Analog(16), 1u8);
+
+        assert_eq!(pins.get(BoardPin::Digital(54)), None);
+        assert_eq!(pins.get(BoardPin::Analog(16)), None);
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SpiSettings {
     pub spcr: u8,
@@ -59,14 +135,13 @@ impl Timer0State {
         if tick_count == 0 {
             return;
         }
-        for _ in 0..tick_count {
-            let (next, overflowed) = tcnt0.overflowing_add(1);
-            *tcnt0 = next;
-            if overflowed {
-                *tifr0 |= tov_mask;
-                if (timsk0 & toie_mask) != 0 {
-                    self.interrupt_pending = true;
-                }
+
+        let counter_total = u64::from(*tcnt0) + u64::from(tick_count);
+        *tcnt0 = counter_total as u8;
+        if counter_total >= 256 {
+            *tifr0 |= tov_mask;
+            if (timsk0 & toie_mask) != 0 {
+                self.interrupt_pending = true;
             }
         }
     }
@@ -80,6 +155,24 @@ impl Timer0State {
             .saturating_mul(prescaler)
             .saturating_sub(self.cycle_remainder);
         Some(cycles_until.max(1) as u64)
+    }
+}
+
+#[cfg(test)]
+mod timer_tests {
+    use super::Timer0State;
+
+    #[test]
+    fn timer_advance_handles_many_ticks_without_iterating_each_tick() {
+        let mut timer = Timer0State::default();
+        let mut counter = 250u8;
+        let mut flags = 0u8;
+
+        timer.advance(600, Some(1), &mut counter, &mut flags, 0x04, 0x02, 0x04);
+
+        assert_eq!(counter, 82);
+        assert_eq!(flags & 0x02, 0x02);
+        assert!(timer.interrupt_pending);
     }
 }
 

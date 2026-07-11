@@ -5,9 +5,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::pcb_view::{render_pcb, LoadedPcb};
-use crate::simulation::{
-    SharedSimulationState, SimulationController, SimulationSnapshot, SimulatorStatus,
-};
+use crate::simulation::{SimulationController, SimulationSnapshot, SimulatorStatus};
 use eframe::egui;
 use eframe::egui::{Color32, RichText};
 use rust_board::load_built_in_board_model;
@@ -517,12 +515,12 @@ impl eframe::App for AvrSimGuiApp {
 
 impl AvrSimGuiApp {
     fn refresh_snapshot(&mut self) {
-        let latest: SharedSimulationState = self.controller.latest_snapshot();
-        if latest.sequence != self.last_sequence {
-            self.last_sequence = latest.sequence;
-            self.update_host_signal_activity(&latest.snapshot);
-            self.snapshot = latest.snapshot;
-        }
+        let Some(latest) = self.controller.latest_snapshot_if_new(self.last_sequence) else {
+            return;
+        };
+        self.last_sequence = latest.sequence;
+        self.update_host_signal_activity(&latest.snapshot);
+        self.snapshot = latest.snapshot;
     }
 
     fn reload_source_for_selected_board_if_unwired(&mut self) {

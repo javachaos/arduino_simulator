@@ -1,9 +1,7 @@
-use std::collections::HashMap;
-
 use rust_cpu::{CpuConfig, DataBus, DecodedInstruction};
 
 use crate::common::{
-    AdcState, BoardPin, BoardPinLevel, PinMode, SerialState, SpiSettings, Timer0State,
+    AdcState, BoardPin, BoardPinLevel, PinMap, PinMode, SerialState, SpiSettings, Timer0State,
 };
 
 pub const PINA: usize = 0x20;
@@ -131,21 +129,11 @@ pub trait MegaBoard {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NullMegaBoard {
-    pin_modes: HashMap<BoardPin, PinMode>,
-    pin_levels: HashMap<BoardPin, u8>,
-    analog_input_levels: HashMap<BoardPin, u16>,
-}
-
-impl Default for NullMegaBoard {
-    fn default() -> Self {
-        Self {
-            pin_modes: HashMap::new(),
-            pin_levels: HashMap::new(),
-            analog_input_levels: HashMap::new(),
-        }
-    }
+    pin_modes: PinMap<PinMode>,
+    pin_levels: PinMap<u8>,
+    analog_input_levels: PinMap<u16>,
 }
 
 impl NullMegaBoard {
@@ -154,7 +142,7 @@ impl NullMegaBoard {
     }
 
     pub fn clear_input_level(&mut self, pin: BoardPin) {
-        self.pin_levels.remove(&pin);
+        self.pin_levels.remove(pin);
     }
 
     pub fn set_analog_input_level(&mut self, pin: BoardPin, counts: u16) {
@@ -162,7 +150,7 @@ impl NullMegaBoard {
     }
 
     pub fn clear_analog_input_level(&mut self, pin: BoardPin) {
-        self.analog_input_levels.remove(&pin);
+        self.analog_input_levels.remove(pin);
     }
 }
 
@@ -170,10 +158,10 @@ impl MegaBoard for NullMegaBoard {
     fn advance_time_ms(&mut self, _elapsed_ms: f64) {}
 
     fn read_pin(&self, pin: BoardPin) -> u8 {
-        if let Some(level) = self.pin_levels.get(&pin) {
-            return *level;
+        if let Some(level) = self.pin_levels.get(pin) {
+            return level;
         }
-        match self.pin_modes.get(&pin).copied() {
+        match self.pin_modes.get(pin) {
             Some(PinMode::InputPullup) => 1,
             _ => 0,
         }
@@ -188,8 +176,8 @@ impl MegaBoard for NullMegaBoard {
     }
 
     fn analog_input_counts(&self, pin: BoardPin) -> u16 {
-        if let Some(level) = self.analog_input_levels.get(&pin) {
-            return (*level).min(1023);
+        if let Some(level) = self.analog_input_levels.get(pin) {
+            return level.min(1023);
         }
         match pin {
             // The stock 1602 LCD keypad shield idles near full-scale when no key is pressed.
@@ -374,7 +362,7 @@ impl<B: MegaBoard> Atmega2560Bus<B> {
         }
         if (value & ADSC) != 0 && self.adc.cycles_remaining <= 0 {
             let prescaler = adc_prescaler(data[ADCSRA] & (ADPS0 | ADPS1 | ADPS2));
-            self.adc.start((13 * prescaler) as u32);
+            self.adc.start(13 * prescaler);
             data[ADCSRA] |= ADSC;
         }
     }
