@@ -106,7 +106,7 @@ pub struct OperandSet {
     pub mode: Option<PointerMode>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DecodedInstruction {
     pub address: u32,
     pub opcode: u16,

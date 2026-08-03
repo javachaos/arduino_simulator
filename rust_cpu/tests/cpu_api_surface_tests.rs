@@ -4,6 +4,21 @@ fn des(k: u8) -> u16 {
     0x940B | (((k as u16) & 0x0F) << 4)
 }
 
+fn ldi(d: u8, k: u8) -> u16 {
+    assert!((16..=31).contains(&d));
+    0xE000 | (((k as u16) & 0xF0) << 4) | (((d - 16) as u16) << 4) | ((k as u16) & 0x0F)
+}
+
+fn rjmp(k: i16) -> u16 {
+    0xC000 | ((k as u16) & 0x0FFF)
+}
+
+fn jmp(target: u32) -> (u16, u16) {
+    let first = 0x940C | (((target >> 17) as u16 & 0x1F) << 4) | (((target >> 16) as u16) & 0x01);
+    let second = (target & 0xFFFF) as u16;
+    (first, second)
+}
+
 fn custom_config_without_default_sp() -> CpuConfig {
     CpuConfig {
         name: "test-device",
@@ -22,6 +37,95 @@ fn custom_config_without_default_sp() -> CpuConfig {
         default_sp: None,
         supports_des: false,
     }
+}
+
+#[test]
+fn decoded_cache_tracks_program_word_mutations() {
+    let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
+
+    cpu.load_program_words(&[0xE001], 0).unwrap(); // ldi r16, 1
+    assert_eq!(cpu.step().unwrap(), StepOutcome::Executed);
+    assert_eq!(cpu.read_register(16).unwrap(), 1);
+
+    cpu.pc = 0;
+    cpu.set_program_word(0, 0xE002).unwrap(); // ldi r16, 2
+    assert_eq!(cpu.step().unwrap(), StepOutcome::Executed);
+    assert_eq!(cpu.read_register(16).unwrap(), 2);
+}
+
+#[test]
+fn decoded_cache_invalidates_previous_word_for_two_word_operands() {
+    let mut cpu = Cpu::new(CpuConfig::atmega2560(), NullBus);
+    let (jmp_opcode, target_two) = jmp(2);
+    let (_, target_four) = jmp(4);
+
+    cpu.load_program_words(&[jmp_opcode, target_two, 0x0000, 0x0000, 0x0000], 0)
+        .unwrap();
+    assert_eq!(cpu.step().unwrap(), StepOutcome::Executed);
+    assert_eq!(cpu.pc, 2);
+
+    cpu.pc = 0;
+    cpu.set_program_word(1, target_four).unwrap();
+    assert_eq!(cpu.step().unwrap(), StepOutcome::Executed);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn cached_basic_block_runs_straight_line_instructions() {
+    let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
+
+    cpu.load_program_words(&[ldi(16, 1), ldi(17, 0x12)], 0)
+        .unwrap();
+    let (executed, outcome) = cpu.run_cached(2).unwrap();
+
+    assert_eq!(executed, 2);
+    assert_eq!(outcome, StepOutcome::Executed);
+    assert_eq!(cpu.pc, 2);
+    assert_eq!(cpu.read_register(16).unwrap(), 1);
+    assert_eq!(cpu.read_register(17).unwrap(), 0x12);
+}
+
+#[test]
+fn cached_basic_block_crosses_branch_boundaries_correctly() {
+    let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
+
+    cpu.load_program_words(&[ldi(16, 1), rjmp(1), ldi(16, 2), ldi(16, 3)], 0)
+        .unwrap();
+    let (executed, outcome) = cpu.run_cached(3).unwrap();
+
+    assert_eq!(executed, 3);
+    assert_eq!(outcome, StepOutcome::Executed);
+    assert_eq!(cpu.pc, 4);
+    assert_eq!(cpu.read_register(16).unwrap(), 3);
+}
+
+#[test]
+fn cached_basic_block_reports_sleeping() {
+    let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
+
+    cpu.load_program_words(&[ldi(16, 1), 0x9588], 0).unwrap();
+    let (executed, outcome) = cpu.run_cached(10).unwrap();
+
+    assert_eq!(executed, 2);
+    assert_eq!(outcome, StepOutcome::Sleeping);
+    assert_eq!(cpu.read_register(16).unwrap(), 1);
+    assert_eq!(cpu.step().unwrap_err(), CpuError::Sleeping);
+}
+
+#[test]
+fn cached_basic_block_detects_public_program_mutations() {
+    let mut cpu = Cpu::new(CpuConfig::atmega328p(), NullBus);
+
+    cpu.load_program_words(&[ldi(16, 1)], 0).unwrap();
+    assert_eq!(cpu.run_cached(1).unwrap().0, 1);
+    assert_eq!(cpu.read_register(16).unwrap(), 1);
+
+    cpu.pc = 0;
+    let replacement = ldi(16, 2);
+    cpu.program[0] = (replacement & 0x00FF) as u8;
+    cpu.program[1] = (replacement >> 8) as u8;
+    assert_eq!(cpu.run_cached(1).unwrap().0, 1);
+    assert_eq!(cpu.read_register(16).unwrap(), 2);
 }
 
 #[test]

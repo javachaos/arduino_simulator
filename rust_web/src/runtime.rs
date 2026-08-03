@@ -556,142 +556,18 @@ fn configured_baud(clock_hz: u32, ucsr0a: u8, ubrr0l: u8, ubrr0h: u8) -> u32 {
     clock_hz / denom
 }
 
-fn run_chunk<B>(
-    cpu: &mut Cpu<B>,
-    instruction_budget: usize,
-) -> Result<RuntimeExit, CpuError>
+fn run_chunk<B>(cpu: &mut Cpu<B>, instruction_budget: usize) -> Result<RuntimeExit, CpuError>
 where
     B: DataBus,
 {
-    let mut executed = 0usize;
-    while executed < instruction_budget {
-        match cpu.step()? {
-            StepOutcome::Executed => {
-                executed += 1;
-            }
-            StepOutcome::BreakHit => {
-                return Ok(RuntimeExit::BreakHit);
-            }
-            StepOutcome::Sleeping => {
-                return Ok(RuntimeExit::Sleeping);
-            }
-        }
-    }
-    Ok(RuntimeExit::MaxInstructionsReached)
+    let (_executed, outcome) = cpu.run_cached(instruction_budget)?;
+    Ok(match outcome {
+        StepOutcome::Executed => RuntimeExit::MaxInstructionsReached,
+        StepOutcome::BreakHit => RuntimeExit::BreakHit,
+        StepOutcome::Sleeping => RuntimeExit::Sleeping,
+    })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{RuntimeExit, SimulationRuntime, SimulationTarget};
-    use crate::example_firmware::{MEGA_PIN_SWEEP, NANO_PIN_SWEEP};
-
-    fn ldi(d: u8, k: u8) -> u16 {
-        assert!((16..=31).contains(&d));
-        0xE000 | (((k as u16) & 0xF0) << 4) | (((d - 16) as u16) << 4) | ((k as u16) & 0x0F)
-    }
-
-    fn sts(r: u8, address: usize) -> (u16, u16) {
-        (
-            0x9200 | (((r as u16) & 0x1F) << 4),
-            (address & 0xFFFF) as u16,
-        )
-    }
-
-    fn brk() -> u16 {
-        0x9598
-    }
-
-    fn program_with_serial_tail(mut words: Vec<u16>) -> Vec<u16> {
-        words.extend(std::iter::repeat_n(0x0000, 200));
-        words.push(brk());
-        words
-    }
-
-    fn make_hex(words: &[u16]) -> String {
-        let mut program_bytes = Vec::with_capacity(words.len() * 2);
-        for word in words {
-            program_bytes.push((word & 0xFF) as u8);
-            program_bytes.push((word >> 8) as u8);
-        }
-
-        let mut records = Vec::new();
-        for (offset, chunk) in program_bytes.chunks(16).enumerate() {
-            records.push(hex_record((offset * 16) as u16, 0x00, chunk));
-        }
-        records.push(hex_record(0x0000, 0x01, &[]));
-        records.join("\n") + "\n"
-    }
-
-    fn hex_record(address: u16, record_type: u8, payload: &[u8]) -> String {
-        let mut body = Vec::with_capacity(payload.len() + 5);
-        body.push(payload.len() as u8);
-        body.push((address >> 8) as u8);
-        body.push((address & 0xFF) as u8);
-        body.push(record_type);
-        body.extend_from_slice(payload);
-        let checksum =
-            (0u8).wrapping_sub(body.iter().fold(0u8, |acc, byte| acc.wrapping_add(*byte)));
-        body.push(checksum);
-        format!(
-            ":{}",
-            body.iter()
-                .map(|byte| format!("{byte:02X}"))
-                .collect::<String>()
-        )
-    }
-
-    fn run_until_halt(runtime: &mut SimulationRuntime, instruction_budget: usize) {
-        loop {
-            let exit = runtime.run_chunk(instruction_budget).expect("run chunk");
-            if matches!(exit, RuntimeExit::BreakHit | RuntimeExit::Sleeping) {
-                break;
-            }
-        }
-    }
-
-    #[test]
-    fn take_new_serial_bytes_preserves_output_from_previous_chunks() {
-        let mut runtime = SimulationRuntime::new(SimulationTarget::Nano);
-        let program = program_with_serial_tail(vec![
-            ldi(16, 0x00),
-            sts(16, rust_mcu::atmega328p::UBRR0L).0,
-            sts(16, rust_mcu::atmega328p::UBRR0L).1,
-            ldi(16, 1 << 3),
-            sts(16, rust_mcu::atmega328p::UCSR0B).0,
-            sts(16, rust_mcu::atmega328p::UCSR0B).1,
-            ldi(16, b'W'),
-            sts(16, rust_mcu::atmega328p::UDR0).0,
-            sts(16, rust_mcu::atmega328p::UDR0).1,
-        ]);
-
-        runtime.load_hex(&make_hex(&program)).expect("load hex");
-        run_until_halt(&mut runtime, 64);
-
-        assert_eq!(runtime.serial_output_bytes(), b"W");
-        assert_eq!(runtime.take_new_serial_bytes(), vec![b'W']);
-        assert!(runtime.take_new_serial_bytes().is_empty());
-    }
-
-    #[test]
-    fn bundled_examples_emit_serial_output() {
-        for example in [NANO_PIN_SWEEP, MEGA_PIN_SWEEP] {
-            let mut runtime = SimulationRuntime::new(example.target);
-            runtime.load_hex(example.hex).expect("load example hex");
-
-            let mut emitted_serial = false;
-            for _ in 0..400 {
-                runtime.run_chunk(20_000).expect("run example");
-                if !runtime.serial_output_bytes().is_empty() {
-                    emitted_serial = true;
-                    break;
-                }
-            }
-
-            assert!(
-                emitted_serial,
-                "{} should emit serial output early in execution",
-                example.label
-            );
-        }
-    }
-}
+#[path = "test_runtime.rs"]
+mod tests;
