@@ -479,3 +479,7 @@ fn mega_slots() -> Vec<PinSlot> {
     }
     slots
 }
+
+#[cfg(test)]
+#[path = "test_board_view.rs"]
+mod tests;
